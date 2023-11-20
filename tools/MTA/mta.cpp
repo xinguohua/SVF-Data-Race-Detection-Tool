@@ -1,7 +1,5 @@
 /*
  // Multi-threaded Program Analysis
- //
- // Author: Yulei Sui,
  */
 
 #include "MTA/MTA.h"
@@ -89,7 +87,7 @@ int main(int argc, char ** argv) {
     if(RACE)
         Passes.add(new MTA());
 
-    Passes.add(createBitcodeWriterPass(Out->os()));
+   Passes.add(createBitcodeWriterPass(Out->os()));
 
     Passes.run(*M1.get());
     Out->keep();

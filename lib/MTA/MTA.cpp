@@ -161,10 +161,6 @@ bool isShared(const Instruction *loc, llvm::Module& module){
     return false;
 }
 
-bool isSite(const Instruction *inst){
-    llvm::CallSite cs(const_cast<llvm::Instruction*>(inst));
-    return (analysisUtil::isStaticExtCall(cs) || analysisUtil::isHeapAllocExtCallViaRet(cs));
-}
 
 void MTA::pairAnalysis(llvm::Module& module, MHP *mhp, LockAnalysis *lsa){
     std::cout << " --- Running pair analysis ---\n";
@@ -226,8 +222,11 @@ void MTA::pairAnalysis(llvm::Module& module, MHP *mhp, LockAnalysis *lsa){
 
     // remove empty instructions
     // write to txt file
-    std::ofstream output;
-    output.open("output.txt");
+    std::ofstream outfile("/Users/xinguohua/Code/SVF-Data-Race-Detection-Tool/Release-build/bin/output.txt");
+
+    if (!outfile.is_open()) {
+        errs() << "Error opening file\n";
+    }
     /*
     separate error message into
     line1
@@ -246,15 +245,16 @@ void MTA::pairAnalysis(llvm::Module& module, MHP *mhp, LockAnalysis *lsa){
         s2 = getSourceLoc(it->getInst2());
         if (s1.empty() || s2.empty()) continue;
         if (std::regex_search(s1, match, line))
-            output << match[1] << std::endl;
+            outfile << match[1] << std::endl;
         if (std::regex_search(s1, match, file))
-            output << match[1] << std::endl;
+            outfile << match[1] << std::endl;
         if (std::regex_search(s2, match, line))
-            output << match[1] << std::endl;
+            outfile << match[1] << std::endl;
         if (std::regex_search(s2, match, file))
-            output << match[1] << std::endl;
+            outfile << match[1] << std::endl;
     }
-    output.close();
+    outfile.flush();
+    outfile.close();
     //need to also remove paairs that are a local variable. need to go into mem, and check.
 
 }
