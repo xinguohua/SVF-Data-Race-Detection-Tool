@@ -279,26 +279,40 @@ void MTA::pairAnalysis(llvm::Module& module, MHP *mhp, LockAnalysis *lsa){
     }
     int total = instructions.size();
     int count = 0;
+    map<const Instruction *, std::string> instruction2LocMap;
+    for (const auto &item: instructions){
+        std::string s1;
+        s1 = getSourceLoc(item);
+        std::cout <<s1;
+        instruction2LocMap[item] = s1;
+    }
     // pair up all instructions (NC2) pairs and add to pair vector if they contain data race
-    for (auto it = instructions.cbegin(); it != instructions.cend();){   
-        // if this instruction is not global/heap/static then skip
+    for (auto it = instructions.cbegin(); it != instructions.cend();){
+        string first = instruction2LocMap[*it];
+        std::cout << first;
+
+                // if this instruction is not global/heap/static then skip
         ++count;
         if (count%50==0){
             std::cout << "Analysing... ";
             std::cout << int((double(count)/total)*100) << " %\r";    
             std::cout.flush();
         }
-        
+
         if (!isShared(*it,module)) {
             ++it;
             continue;
         }
-        for (auto it2 = ++it; it2 != instructions.cend(); ++it2){        
+        for (auto it2 = std::next(it); it2 != instructions.cend(); ++it2){
+            string two = instruction2LocMap[*it2];
+            std::cout << two;
+
             InstructionPair pair = InstructionPair(*it,*it2);  
             if (hasDataRace(pair, module,mhp,lsa)){
                 pairs.push_back(pair);
             }
         }
+        ++it;
     }
     
     instructions.clear();
