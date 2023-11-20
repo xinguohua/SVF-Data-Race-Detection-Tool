@@ -1,8 +1,6 @@
 /*
  * MTA.cpp
  *
- *  Created on: May 14, 2014
- *      Author: Yulei Sui, Peng Di
  */
 
 #include "MTA/MTA.h"
@@ -25,12 +23,6 @@
 using namespace llvm;
 using namespace analysisUtil;
 
-static RegisterPass<MTA> RACEDETECOR("pmhp", "May-Happen-in-Parallel Analysis");
-
-static cl::opt<bool> AndersenAnno("tsan-ander", cl::init(false), cl::desc("Add TSan annotation according to Andersen"));
-
-static cl::opt<bool> FSAnno("tsan-fs", cl::init(false), cl::desc("Add TSan annotation according to flow-sensitive analysis"));
-
 
 char MTA::ID = 0;
 llvm::ModulePass* MTA::modulePass = NULL;
@@ -45,8 +37,6 @@ MTA::MTA() :
 MTA::~MTA() {
     if (tcg)
         delete tcg;
-    //if (tct)
-    //    delete tct;
 }
 
 /*!
@@ -60,45 +50,6 @@ bool MTA::runOnModule(llvm::Module& module) {
     MHP* mhp = computeMHP(module);
     LockAnalysis* lsa = computeLocksets(mhp->getTCT());
     pairAnalysis(module, mhp, lsa);
-
-
-    /*
-    if (AndersenAnno) {
-        pta = mhp->getTCT()->getPTA();
-        if (pta->printStat())
-            stat->performMHPPairStat(mhp,lsa);
-        AndersenWaveDiff::releaseAndersenWaveDiff();
-    } else if (FSAnno) {
-
-        reportMemoryUsageKB("Mem before analysis");
-        DBOUT(DGENERAL, outs() << pasMsg("FSMPTA analysis\n"));
-        DBOUT(DMTA, outs() << pasMsg("FSMPTA analysis\n"));
-
-        DOTIMESTAT(double ptStart = stat->getClk());
-        pta = FSMPTA::createFSMPTA(module, mhp,lsa);
-        DOTIMESTAT(double ptEnd = stat->getClk());
-        DOTIMESTAT(stat->FSMPTATime += (ptEnd - ptStart) / TIMEINTERVAL);
-
-        reportMemoryUsageKB("Mem after analysis");
-
-        if (pta->printStat())
-            stat->performMHPPairStat(mhp,lsa);
-
-        FSMPTA::releaseFSMPTA();
-    }
-
-    if (DoInstrumentation) {
-        DBOUT(DGENERAL, outs() << pasMsg("ThreadSanitizer Instrumentation\n"));
-        DBOUT(DMTA, outs() << pasMsg("ThreadSanitizer Instrumentation\n"));
-        TSan tsan;
-        tsan.doInitialization(*pta->getModule());
-        for (Module::iterator it = pta->getModule()->begin(), eit = pta->getModule()->end(); it != eit; ++it) {
-            tsan.runOnFunction(*it);
-        }
-        if (pta->printStat())
-            PrintStatistics();
-    }
-    */
 
     delete mhp;
     delete lsa;
@@ -153,50 +104,6 @@ MHP* MTA::computeMHP(llvm::Module& module) {
     DBOUT(DGENERAL, outs() << pasMsg("MHP analysis finish\n"));
     DBOUT(DMTA, outs() << pasMsg("MHP analysis finish\n"));
     return mhp;
-}
-
-///*!
-// * Check   (1) write-write race
-// *         (2) write-read race
-// *         (3) read-read race
-// * when two memory access may-happen in parallel and does not protected by the same lock
-// * (excluding global constraints because they are initialized before running the main function)
-// */
-void MTA::detect(llvm::Module& module) {
-
-    DBOUT(DGENERAL, outs() << pasMsg("Starting Race Detection\n"));
-
-    LoadSet loads;
-    StoreSet stores;
-
-    std::set<const Instruction*> needcheckinst;
-    // Add symbols for all of the functions and the instructions in them.
-    for (Module::iterator F = module.begin(), E = module.end(); F != E; ++F) {
-        // collect and create symbols inside the function body
-        for (inst_iterator II = inst_begin(*F), E = inst_end(*F); II != E; ++II) {
-            const Instruction *inst = &*II;
-            if (const LoadInst* load = dyn_cast<LoadInst>(inst)) {
-                loads.insert(load);
-            } else if (const StoreInst* store = dyn_cast<StoreInst>(inst)) {
-                stores.insert(store);
-            }
-        }
-    }
-
-    for (LoadSet::const_iterator lit = loads.begin(), elit = loads.end(); lit != elit; ++lit) {
-        const LoadInst* load = *lit;
-        bool loadneedcheck = false;
-        for (StoreSet::const_iterator sit = stores.begin(), esit = stores.end(); sit != esit; ++sit) {
-            const StoreInst* store = *sit;
-
-            loadneedcheck = true;
-            needcheckinst.insert(store);
-        }
-        if (loadneedcheck)
-            needcheckinst.insert(load);
-    }
-
-    outs() << "HP needcheck: " << needcheckinst.size() << "\n";
 }
 
 bool hasDataRace(InstructionPair &pair, llvm::Module& module, MHP *mhp, LockAnalysis *lsa){

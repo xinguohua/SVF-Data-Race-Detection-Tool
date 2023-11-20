@@ -1,8 +1,5 @@
 /*
  * RaceDetector.h
- *
- *  Created on: May 14, 2014
- *      Author: Yulei Sui, Peng Di
  */
 
 #ifndef MTA_H_
@@ -52,8 +49,6 @@ public:
     virtual MHP* computeMHP(llvm::Module& module);
     /// Compute locksets
     virtual LockAnalysis* computeLocksets(TCT* tct);
-    /// Perform detection
-    virtual void detect(llvm::Module& module);
 
     /// output test
     virtual void pairAnalysis(llvm::Module& module, MHP *mhp, LockAnalysis *lsa);
