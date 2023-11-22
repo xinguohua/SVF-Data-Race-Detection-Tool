@@ -137,6 +137,8 @@ public:
     typedef std::map<const llvm::Function*, llvm::DominatorTree*> FunToDTMap;  ///< map a function to its dominator tree
     typedef std::map<const llvm::Function*, llvm::PostDominatorTree*> FunToPostDTMap;  ///< map a function to its post dominator tree
     typedef std::map<const llvm::Function*, PTALoopInfo*> FunToLoopInfoMap;  ///< map a function to its loop info
+    typedef std::map<const llvm::Function*, llvm::PostDominatorTreeWrapperPass*> FunToWrapperMap;  ///< map a function to its loop info
+
 
     /// Constructor
     PTACFInfoBuilder() {
@@ -144,15 +146,18 @@ public:
     }
     /// Destructor
     ~PTACFInfoBuilder() {
+        for(FunToWrapperMap::iterator it = funToWrapperMap.begin(), eit = funToWrapperMap.end(); it!=eit; ++it) {
+            delete it->second;
+        }
         for(FunToLoopInfoMap::iterator it = funToLoopInfoMap.begin(), eit = funToLoopInfoMap.end(); it!=eit; ++it) {
             delete it->second;
         }
         for(FunToDTMap::iterator it = funToDTMap.begin(), eit = funToDTMap.end(); it!=eit; ++it) {
             delete it->second;
         }
-        for(FunToPostDTMap::iterator it = funToPDTMap.begin(), eit = funToPDTMap.end(); it!=eit; ++it) {
-            delete it->second;
-        }
+//        for(FunToPostDTMap::iterator it = funToPDTMap.begin(), eit = funToPDTMap.end(); it!=eit; ++it) {
+//            delete it->second;
+//        }
     }
 
     /// Get loop info of a function
@@ -176,6 +181,7 @@ public:
         if(it==funToPDTMap.end()) {
             llvm::PostDominatorTreeWrapperPass* postDT = new llvm::PostDominatorTreeWrapperPass();
             postDT->runOnFunction(*fun);
+            funToWrapperMap[fun] = postDT;
 	    llvm::PostDominatorTree * PDT = &(postDT->getPostDomTree());
             funToPDTMap[fun] = PDT;
             return PDT;
@@ -202,6 +208,7 @@ private:
     FunToLoopInfoMap funToLoopInfoMap;		///< map a function to its loop info
     FunToDTMap funToDTMap;					///< map a function to its dominator tree
     FunToPostDTMap funToPDTMap;				///< map a function to its post dominator tree
+    FunToWrapperMap funToWrapperMap;
 };
 
 /*!

@@ -240,9 +240,12 @@ void MTA::pairAnalysis(llvm::Module& module, MHP *mhp, LockAnalysis *lsa){
     std::regex line("ln: (\\d+)");
     std::regex file("fl: (.*)");
     std::smatch match;
-    for (auto it = pairs.cbegin(); it != pairs.cend(); ++it){
+    for (auto it = pairs.begin(); it != pairs.end(); ++it){
         s1 = getSourceLoc(it->getInst1());
         s2 = getSourceLoc(it->getInst2());
+        it->setLoc1(s1);
+        it->setLoc2(s2);
+
         if (s1.empty() || s2.empty()) continue;
         if (std::regex_search(s1, match, line))
             outfile << match[1] << std::endl;
@@ -253,9 +256,95 @@ void MTA::pairAnalysis(llvm::Module& module, MHP *mhp, LockAnalysis *lsa){
         if (std::regex_search(s2, match, file))
             outfile << match[1] << std::endl;
     }
+    outfile<<"==================="<<std::endl;
+    for (auto it1 = pairs.begin(); it1 != std::prev(pairs.end()); ++it1) {
+        for (auto it2 = std::next(it1); it2 != pairs.end(); ++it2) {
+            auto element0 = *it1;
+            auto element1 = *it2;
+            // 两种交叉
+            bool flag1 = isControlDependent(element0.getInst1(), element1.getInst1());
+            bool flag2 = isControlDependent(element0.getInst2(), element1.getInst2());
+
+            bool flag3= isControlDependent(element0.getInst1(), element1.getInst2());
+            bool flag4 = isControlDependent(element0.getInst2(), element1.getInst1());
+            if (!flag1 && flag2 || flag1 && !flag2 || !flag3 && flag4 || flag3 && !flag4){
+                outfile<< "first race: " << element0.getLoc1()<<"---"<< element0.getLoc2()<< std::endl;
+                outfile<< "second race: " << element1.getLoc1()<<"---"<< element1.getLoc2()<<std::endl;
+            }
+            if (!flag1 && flag2){
+                outfile<< "Loc:" << element0.getLoc1()<<"---"<< element1.getLoc1()<<" dont dependency"<< std::endl;
+                outfile<< "Loc:" << element0.getLoc2()<<"---"<< element1.getLoc2()<<" have dependency"<<std::endl;
+                continue;
+            }
+            if (flag1 && !flag2){
+                outfile<< "Loc:" << element0.getLoc1()<<"---"<< element1.getLoc1()<< " have dependency"<< std::endl;
+                outfile<< "Loc:" << element0.getLoc2()<<"---"<< element1.getLoc2()<<" dont dependency"<<std::endl;
+                continue;
+            }
+            if (!flag3 && flag4){
+                outfile<< "Loc:" << element0.getLoc1()<<"---"<< element1.getLoc2()<< " dont dependency"<< std::endl;
+                outfile<< "Loc:" << element0.getLoc2()<<"---"<< element1.getLoc1()<<" have dependency"<<std::endl;
+                continue;
+            }
+            if (flag3 && !flag4){
+                outfile<< "Loc:" << element0.getLoc1()<<"---"<< element1.getLoc2()<<" have dependency"<< std::endl;
+                outfile<< "Loc:" << element0.getLoc2()<<"---"<< element1.getLoc1()<<" dont dependency"<<std::endl;
+                continue;
+            }
+        }
+    }
+
+
     outfile.flush();
     outfile.close();
     //need to also remove paairs that are a local variable. need to go into mem, and check.
 
 }
 
+bool MTA::isControlDependent(const llvm::Instruction* A,const  llvm::Instruction* B) {
+    if (!A || !B) {
+        return false;
+    }
+
+    // block
+    if (!A->getParent() || !B->getParent()) {
+        return false;
+    }
+
+    const BasicBlock * A_Block = A->getParent();
+    const BasicBlock * B_Block = B->getParent();
+
+    // Function
+    if (!A->getParent()->getParent() || !B->getParent()->getParent()){
+        return false;
+    }
+
+    // same Function
+    if (A->getParent()->getParent() != B->getParent()->getParent()){
+        return false;
+    }
+
+    // A is before B
+    bool isA2B = std::find(pred_begin(B_Block), pred_end(B_Block), A_Block) != pred_end(B_Block);
+    //B is before A
+    bool isB2A = std::find(pred_begin(A_Block), pred_end(A_Block), B_Block) != pred_end(A_Block);
+
+    if (!isA2B && !isB2A){
+        return false;
+    }
+
+    const Function * F = A->getParent()->getParent();
+    // 获取函数的后支配树
+    const PostDominatorTree* pdt = getPostDT(F);
+    if (isA2B){
+        return !pdt->dominates(B_Block,A_Block);
+    }
+
+    if (isB2A){
+        return !pdt->dominates(A_Block, B_Block);
+    }
+}
+
+const llvm::PostDominatorTree* MTA::getPostDT(const llvm::Function* fun) {
+    return infoBuilder.getPostDT(fun);
+}

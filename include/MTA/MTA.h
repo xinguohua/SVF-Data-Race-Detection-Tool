@@ -9,7 +9,12 @@
 #include <llvm/Analysis/ScalarEvolution.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/IR/Instructions.h>
+#include "llvm/Analysis/PostDominators.h"
+#include "llvm/PassAnalysisSupport.h"
+#include "Util/DataFlowUtil.h"
+
 #include <set>
+#include <utility>
 #include <vector>
 
 class PointerAnalysis;
@@ -53,7 +58,12 @@ public:
     /// output test
     virtual void pairAnalysis(llvm::Module& module, MHP *mhp, LockAnalysis *lsa);
 
-    /// Pass name
+    const llvm::PostDominatorTree* getPostDT(const llvm::Function* fun);
+
+    virtual bool isControlDependent(const llvm::Instruction *A, const llvm::Instruction *B);
+
+
+        /// Pass name
     virtual llvm::StringRef getPassName() const {
         return "Multi threaded program analysis pass";
     }
@@ -81,6 +91,9 @@ private:
     MTAStat* stat;
     static FunToSEMap func2ScevMap;
     static FunToLoopInfoMap func2LoopInfoMap;
+
+    PTACFInfoBuilder infoBuilder;		    ///< map a function to its loop info
+
 };
 
 class InstructionPair {
@@ -107,11 +120,28 @@ public:
         return alias;
     }
 
-    
+    std::string getLoc1(){
+        return loc1;
+    }
+
+    std::string getLoc2() {
+        return loc2;
+    }
+
+    void setLoc1(std::string str) {
+        loc1 = std::move(str);
+    }
+
+    void setLoc2(std::string str){
+        loc2 = std::move(str);
+    }
+
 private:
     const llvm::Instruction* inst1;
     const llvm::Instruction* inst2;
-    int alias; 
+    std::string loc1;
+    std::string loc2;
+    int alias;
 };
 
 #endif /* MTA_H_ */
