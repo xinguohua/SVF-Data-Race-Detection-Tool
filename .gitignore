@@ -3,4 +3,5 @@ cfe-4.0.0.src/
 llvm-4.0.0.src/
 llvm-4.0.0-release/
 llvm-4.0.0-debug/
-
+Release-build/
+cmake-build-debug/

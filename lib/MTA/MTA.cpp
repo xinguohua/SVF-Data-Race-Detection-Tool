@@ -145,7 +145,7 @@ bool isShared(const llvm::Value *val, llvm::Module &module) {
     for (PointsTo::iterator it = target.begin(), eit = target.end();
          it != eit; ++it) {
         const MemObj *obj = pag->getObject(*it);
-        if (obj->isGlobalObj() || obj->isStaticObj() || obj->isHeap()) {
+        if (obj->isGlobalObj() || obj->isStaticObj() || obj->isHeap() || obj->hasPtrObj()) {
             return true;
         }
     }
@@ -242,7 +242,8 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
     // pair up all instructions (NC2) pairs and add to pair vector if they contain data race
     for (auto it = instructions.cbegin(); it != instructions.cend();) {
         string first = instruction2LocMap[*it];
-        //  std::cout << endl<<"first===" << first << endl;
+        std::cout << endl<<"first===" << first << endl;
+
 
         // if this instruction is not global/heap/static then skip
         ++count;
@@ -258,7 +259,7 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
         }
         for (auto it2 = std::next(it); it2 != instructions.cend(); ++it2) {
             string two = instruction2LocMap[*it2];
-            //std::cout << "two====" << two << endl;
+            std::cout << "two====" << two << endl;
 
             InstructionPair pair = InstructionPair(*it, *it2);
             if (hasDataRace(pair, module, mhp, lsa)) {
@@ -551,7 +552,7 @@ bool dependenceStrongCompare(Dependence a, Dependence b) {
 
 using Path = std::vector<Instruction*>;
 
-void dfsCheckFunctionCall(Function *current, Function *target, std::unordered_set<Function*> &visited, Path currentPath, std::vector<Path>& allPaths) {
+void dfsCheckFunctionCall(Function *current, Function *target, std::unordered_set<Function*> &visited, const Path& currentPath, std::vector<Path>& allPaths) {
     if (!target || visited.find(current) != visited.end()) {
         return;
     }

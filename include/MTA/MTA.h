@@ -77,8 +77,7 @@ public:
 
     const llvm::PostDominatorTree* getPostDT(const llvm::Function* fun);
 
-    virtual Dependence isDependent(llvm::Instruction *A, std::__wrap_iter<std::vector<CallInst *,
-            allocator < _Tp>>::const_pointer B);
+    virtual Dependence isDependent(llvm::Instruction *A, llvm::Instruction *B);
 
     virtual Dependence findDependence(llvm::Instruction *A, llvm::Instruction *B, llvm::BasicBlock *A_Block, llvm::BasicBlock *B_Block);
         /// Pass name
