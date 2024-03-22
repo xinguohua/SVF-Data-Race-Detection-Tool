@@ -24,7 +24,24 @@ class MTAStat;
 class TCT;
 class MHP;
 class LockAnalysis;
+enum class Dependence {
+    No,   // 完全无关
+    programLogicBeforeDependence, /*程序逻辑顺序依赖 memory_order_relaxed*/
+    programLogicAfterDependence, /*程序逻辑顺序依赖 memory_order_relaxed*/
+    barrierOrderAcquireDependence, /*它防止后面的读或写操作被重排序到原子操作之前。*/
+    barrierOrderReleaseDependence, /*之前的读或写操作被重排序到原子操作之后*/
+    barrierOrderAcqRel, /*操作之前的写入对其他线程在该操作之后是可见的，同时操作之后的读取不能移到操作之前*/
+    barrierOrderSeqRel, /*顺序一致*/
+    ControlDependence,  //存在控制依赖
+    DataDependence
+};
 
+
+enum class Result {
+    No,   // 完全无关
+    Program,
+    Order,
+};
 /*!
  * Base data race detector
  */
@@ -60,9 +77,10 @@ public:
 
     const llvm::PostDominatorTree* getPostDT(const llvm::Function* fun);
 
-    virtual bool isControlDependent(const llvm::Instruction *A, const llvm::Instruction *B);
+    virtual Dependence isDependent(llvm::Instruction *A, std::__wrap_iter<std::vector<CallInst *,
+            allocator < _Tp>>::const_pointer B);
 
-
+    virtual Dependence findDependence(llvm::Instruction *A, llvm::Instruction *B, llvm::BasicBlock *A_Block, llvm::BasicBlock *B_Block);
         /// Pass name
     virtual llvm::StringRef getPassName() const {
         return "Multi threaded program analysis pass";
@@ -98,17 +116,17 @@ private:
 
 class InstructionPair {
 public:
-    InstructionPair(const llvm::Instruction* a, const llvm::Instruction* b){
+    InstructionPair(llvm::Instruction* a, llvm::Instruction* b){
         inst1 = a;
         inst2 = b;
         alias = 0;
     }
 
-    const llvm::Instruction* getInst1() const{
+    llvm::Instruction* getInst1() const{
         return inst1;
     }
 
-    const llvm::Instruction* getInst2() const{
+    llvm::Instruction* getInst2() const{
         return inst2;
     }
 
@@ -120,11 +138,11 @@ public:
         return alias;
     }
 
-    std::string getLoc1(){
+    std::string getLoc1() const{
         return loc1;
     }
 
-    std::string getLoc2() {
+    std::string getLoc2() const{
         return loc2;
     }
 
@@ -137,8 +155,8 @@ public:
     }
 
 private:
-    const llvm::Instruction* inst1;
-    const llvm::Instruction* inst2;
+    llvm::Instruction* inst1;
+    llvm::Instruction* inst2;
     std::string loc1;
     std::string loc2;
     int alias;
