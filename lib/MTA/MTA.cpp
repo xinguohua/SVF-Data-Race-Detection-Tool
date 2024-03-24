@@ -139,6 +139,12 @@ bool hasDataRace(InstructionPair &pair, llvm::Module &module, MHP *mhp, LockAnal
             AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
             pair.setAlias(results);
             alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        } else if (const AtomicCmpXchgInst *p2 = dyn_cast<AtomicCmpXchgInst>(pair.getInst2())) {
+            // For cmpxchg, we need to check both the address being compared and exchanged.
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            // The aliasing logic for cmpxchg is similar because it involves both reading and writing to the same memory location.
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
         }
     } else if (const AtomicRMWInst *p1 = dyn_cast<AtomicRMWInst>(pair.getInst1())){
         // Handling AtomicRMW as the first instruction
@@ -156,6 +162,36 @@ bool hasDataRace(InstructionPair &pair, llvm::Module &module, MHP *mhp, LockAnal
             // If the second instruction is also an AtomicRMW, compare their pointer operands
             AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
             pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        } else if (const AtomicCmpXchgInst *p2 = dyn_cast<AtomicCmpXchgInst>(pair.getInst2())) {
+            // For cmpxchg, we need to check both the address being compared and exchanged.
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            // The aliasing logic for cmpxchg is similar because it involves both reading and writing to the same memory location.
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        }
+    }else if (const AtomicCmpXchgInst *p1 = dyn_cast<AtomicCmpXchgInst>(pair.getInst1())){
+        // Handling AtomicRMW as the first instruction
+        if (const LoadInst *p2 = dyn_cast<LoadInst>(pair.getInst2())) {
+            // If the second instruction is a Load, compare their pointer operands
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        } else if (const StoreInst *p2 = dyn_cast<StoreInst>(pair.getInst2())) {
+            // If the second instruction is a Store, compare their pointer operands
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        } else if (const AtomicRMWInst *p2 = dyn_cast<AtomicRMWInst>(pair.getInst2())) {
+            // If the second instruction is also an AtomicRMW, compare their pointer operands
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        } else if (const AtomicCmpXchgInst *p2 = dyn_cast<AtomicCmpXchgInst>(pair.getInst2())) {
+            // For cmpxchg, we need to check both the address being compared and exchanged.
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            // The aliasing logic for cmpxchg is similar because it involves both reading and writing to the same memory location.
             alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
         }
     }
@@ -183,7 +219,11 @@ bool isShared(const llvm::Value *val, llvm::Module &module) {
 bool isShared(const Instruction *loc, llvm::Module &module) {
     if (const StoreInst *p1 = dyn_cast<StoreInst>(loc)) {
         return isShared(p1->getPointerOperand(), module);
-    } else if (const LoadInst *p1 = dyn_cast<LoadInst>(loc)) {
+    }else if (const LoadInst *p1 = dyn_cast<LoadInst>(loc)) {
+        return isShared(p1->getPointerOperand(), module);
+    }else if (const AtomicRMWInst *p1 = dyn_cast<AtomicRMWInst>(loc)){
+        return isShared(p1->getPointerOperand(), module);
+    } else if (const AtomicCmpXchgInst *p1 = dyn_cast<AtomicCmpXchgInst>(loc)){
         return isShared(p1->getPointerOperand(), module);
     }
     return false;
@@ -262,6 +302,8 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
                 instructions.insert(ld);
             } else if (AtomicRMWInst *rmwInst = dyn_cast<AtomicRMWInst>(inst)){
                 instructions.insert(rmwInst);
+            } else if (AtomicCmpXchgInst *chgInst =  dyn_cast<AtomicCmpXchgInst>(inst)){
+                instructions.insert(chgInst);
             }
         }
     }
