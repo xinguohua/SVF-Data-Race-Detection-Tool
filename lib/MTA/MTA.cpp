@@ -119,6 +119,11 @@ bool hasDataRace(InstructionPair &pair, llvm::Module &module, MHP *mhp, LockAnal
             AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
             pair.setAlias(results);
             alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        }else if (const AtomicRMWInst *p2 = dyn_cast<AtomicRMWInst>(pair.getInst2())) {
+            // If the second instruction is also an AtomicRMW, compare their pointer operands
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
         }
     } else if (const LoadInst *p1 = dyn_cast<LoadInst>(pair.getInst1())) {
         if (const LoadInst *p2 = dyn_cast<LoadInst>(pair.getInst2())) {
@@ -126,6 +131,29 @@ bool hasDataRace(InstructionPair &pair, llvm::Module &module, MHP *mhp, LockAnal
             pair.setAlias(results);
             alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
         } else if (const StoreInst *p2 = dyn_cast<StoreInst>(pair.getInst2())) {
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        }else if (const AtomicRMWInst *p2 = dyn_cast<AtomicRMWInst>(pair.getInst2())) {
+            // If the second instruction is also an AtomicRMW, compare their pointer operands
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        }
+    } else if (const AtomicRMWInst *p1 = dyn_cast<AtomicRMWInst>(pair.getInst1())){
+        // Handling AtomicRMW as the first instruction
+        if (const LoadInst *p2 = dyn_cast<LoadInst>(pair.getInst2())) {
+            // If the second instruction is a Load, compare their pointer operands
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        } else if (const StoreInst *p2 = dyn_cast<StoreInst>(pair.getInst2())) {
+            // If the second instruction is a Store, compare their pointer operands
+            AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
+            pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        } else if (const AtomicRMWInst *p2 = dyn_cast<AtomicRMWInst>(pair.getInst2())) {
+            // If the second instruction is also an AtomicRMW, compare their pointer operands
             AliasResult results = pta->alias(p1->getPointerOperand(), p2->getPointerOperand());
             pair.setAlias(results);
             alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
@@ -222,11 +250,18 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
 
     for (Module::iterator F = module.begin(), E = module.end(); F != E; ++F) {
         for (inst_iterator II = inst_begin(&*F), E = inst_end(&*F); II != E; ++II) {
+
             Instruction *inst = &*II;
+            if (auto dbgLoc = inst->getDebugLoc()){
+                unsigned line = dbgLoc.getLine();
+                llvm::errs() << "Instruction at " <<  ":" << line<< "\n";
+            }
             if (StoreInst *st = dyn_cast<StoreInst>(inst)) {
                 instructions.insert(st);
             } else if (LoadInst *ld = dyn_cast<LoadInst>(inst)) {
                 instructions.insert(ld);
+            } else if (AtomicRMWInst *rmwInst = dyn_cast<AtomicRMWInst>(inst)){
+                instructions.insert(rmwInst);
             }
         }
     }
