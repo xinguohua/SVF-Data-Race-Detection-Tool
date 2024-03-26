@@ -292,10 +292,10 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
         for (inst_iterator II = inst_begin(&*F), E = inst_end(&*F); II != E; ++II) {
 
             Instruction *inst = &*II;
-            if (auto dbgLoc = inst->getDebugLoc()){
-                unsigned line = dbgLoc.getLine();
-                llvm::errs() << "Instruction at " <<  ":" << line<< "\n";
-            }
+//            if (auto dbgLoc = inst->getDebugLoc()){
+//                unsigned line = dbgLoc.getLine();
+//                llvm::errs() << "Instruction at " <<  ":" << line<< "\n";
+//            }
             if (StoreInst *st = dyn_cast<StoreInst>(inst)) {
                 instructions.insert(st);
             } else if (LoadInst *ld = dyn_cast<LoadInst>(inst)) {
@@ -566,7 +566,7 @@ std::vector<std::vector<const llvm::Instruction *>> traverseInstructions(llvm::I
     if (A_Block == B_Block) {
         bool startCollecting = false;
         for (const llvm::Instruction &instr: *A_Block) {
-            auto dbgLoc = &instr.getDebugLoc();  // 尝试获取调试位置信息
+//            auto dbgLoc = &instr.getDebugLoc();  // 尝试获取调试位置信息
 //            if (dbgLoc != nullptr){
 //                llvm::errs() << "Instruction at "
 //                             << dbgLoc->getLine() // 获取文件名

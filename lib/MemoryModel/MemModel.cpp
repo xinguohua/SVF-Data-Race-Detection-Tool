@@ -712,6 +712,12 @@ void SymbolTableInfo::buildMemModel(llvm::Module& module) {
                 //TODO handle inlineAsm
                 ///if (isa<InlineAsm>(Callee))
 
+            } else if (const AtomicRMWInst *rmw = dyn_cast<AtomicRMWInst>(inst)){
+                collectSym(rmw->getPointerOperand());
+                collectSym(rmw->getValOperand());
+            } else if (const AtomicCmpXchgInst *chg =  dyn_cast<AtomicCmpXchgInst>(inst)){
+                collectSym(chg->getPointerOperand());
+                collectSym(chg->getNewValOperand());
             }
             //@}
         }

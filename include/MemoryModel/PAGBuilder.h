@@ -130,6 +130,9 @@ public:
     void visitPHINode(llvm::PHINode &I);
     void visitStoreInst(llvm::StoreInst &I);
     void visitLoadInst(llvm::LoadInst &I);
+    void visitAtomicCmpXchgInst(llvm::AtomicCmpXchgInst &I);
+    void visitAtomicRMWInst(llvm::AtomicRMWInst &I);
+
     void visitGetElementPtrInst(llvm::GetElementPtrInst &I);
     void visitCallInst(llvm::CallInst &I) {
         visitCallSite(&I);
@@ -143,6 +146,7 @@ public:
     void visitCastInst(llvm::CastInst &I);
     void visitSelectInst(llvm::SelectInst &I);
     void visitIntToPtrInst(llvm::IntToPtrInst &inst);
+//    void visitBitCastInst(llvm::BitCastInst &inst);
     void visitExtractValueInst(llvm::ExtractValueInst &EVI);
     void visitInsertValueInst(llvm::InsertValueInst &IVI) {
     }
@@ -177,10 +181,7 @@ public:
     }
     void visitFenceInst(llvm::FenceInst &I) { /*returns void*/
     }
-    void visitAtomicCmpXchgInst(llvm::AtomicCmpXchgInst &I) {
-    }
-    void visitAtomicRMWInst(llvm::AtomicRMWInst &I) {
-    }
+
 
     /// Provide base case for our instruction visit.
     inline void visitInstruction(llvm::Instruction &I) {

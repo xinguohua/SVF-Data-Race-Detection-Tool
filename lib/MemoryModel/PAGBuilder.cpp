@@ -31,9 +31,9 @@
 #include "Util/AnalysisUtil.h"
 #include "Util/CPPUtil.h"
 
-#include <fstream>	// for PAGBuilderFromFile
-#include <string>	// for PAGBuilderFromFile
-#include <sstream>	// for PAGBuilderFromFile
+#include <fstream>    // for PAGBuilderFromFile
+#include <string>    // for PAGBuilderFromFile
+#include <sstream>    // for PAGBuilderFromFile
 #include <llvm/Support/CommandLine.h> // for tool output file
 
 using namespace llvm;
@@ -44,7 +44,7 @@ using namespace analysisUtil;
 /*!
  * Start building PAG here
  */
-PAG* PAGBuilder::build(llvm::Module& module) {
+PAG *PAGBuilder::build(llvm::Module &module) {
     /// initial external library information
     /// initial PAG nodes
     initalNode();
@@ -53,43 +53,52 @@ PAG* PAGBuilder::build(llvm::Module& module) {
     visitGlobal(module);
     /// handle functions
     for (llvm::Module::iterator fit = module.begin(), efit = module.end();
-            fit != efit; ++fit) {
-        llvm::Function& fun = *fit;
+         fit != efit; ++fit) {
+        llvm::Function &fun = *fit;
         /// collect return node of function fun
-        if(!analysisUtil::isExtCall(&fun)) {
+        if (!analysisUtil::isExtCall(&fun)) {
             /// Return PAG node will not be created for function which can not
             /// reach the return instruction due to call to abort(), exit(),
             /// etc. In 176.gcc of SPEC 2000, function build_objc_string() from
             /// c-lang.c shows an example when fun.doesNotReturn() evaluates
             /// to TRUE because of abort().
-            if(fun.doesNotReturn() == false && fun.getReturnType()->isPointerTy())
-                pag->addFunRet(&fun,pag->getPAGNode(pag->getReturnNode(&fun)));
+            if (fun.doesNotReturn() == false && fun.getReturnType()->isPointerTy())
+                pag->addFunRet(&fun, pag->getPAGNode(pag->getReturnNode(&fun)));
         }
         for (llvm::Function::arg_iterator I = fun.arg_begin(), E = fun.arg_end();
-                I != E; ++I) {
+             I != E; ++I) {
             /// To be noted, we do not record arguments which are in declared function without body
-            if(!analysisUtil::isExtCall(&fun)) {
-                pag->setCurrentLocation(&*I,&fun.getEntryBlock());
+            if (!analysisUtil::isExtCall(&fun)) {
+                pag->setCurrentLocation(&*I, &fun.getEntryBlock());
                 NodeID argValNodeId = pag->getValueNode(&*I);
                 // if this is the function does not have caller (e.g. main)
                 // or a dead function, we may create a black hole address edge for it
-                if(analysisUtil::ArgInNoCallerFunction(&*I)) {
-                    if(I->getType()->isPointerTy())
+                if (analysisUtil::ArgInNoCallerFunction(&*I)) {
+                    if (I->getType()->isPointerTy())
                         pag->addBlackHoleAddrEdge(argValNodeId);
                 }
-                /// We do not add arguments of main (program entry) into argument list
-                /// Because, later we don't manipulate them for connection of formal and actual parameters
+                    /// We do not add arguments of main (program entry) into argument list
+                    /// Because, later we don't manipulate them for connection of formal and actual parameters
                 else
-                    pag->addFunArgs(&fun,pag->getPAGNode(argValNodeId));
+                    pag->addFunArgs(&fun, pag->getPAGNode(argValNodeId));
             }
         }
         for (llvm::Function::iterator bit = fun.begin(), ebit = fun.end();
-                bit != ebit; ++bit) {
-            llvm::BasicBlock& bb = *bit;
+             bit != ebit; ++bit) {
+            llvm::BasicBlock &bb = *bit;
             for (llvm::BasicBlock::iterator it = bb.begin(), eit = bb.end();
-                    it != eit; ++it) {
-                llvm::Instruction& inst = *it;
-                pag->setCurrentLocation(&inst,&bb);
+                 it != eit; ++it) {
+
+                llvm::Instruction &inst = *it;
+                pag->setCurrentLocation(&inst, &bb);
+                DebugLoc dbgLoc = inst.getDebugLoc();  // 尝试获取调试位置信息
+                if (dbgLoc) {
+                    unsigned line = dbgLoc.getLine();
+                    llvm::errs() << "Instruction at "
+                                 << line // 获取文件名
+                                 << ":"
+                                 << "\n";
+                }
                 visit(inst);
             }
         }
@@ -107,7 +116,7 @@ PAG* PAGBuilder::build(llvm::Module& module) {
 void PAGBuilder::initalNode() {
     DBOUT(DPAGBuild, outs() << "Inital PAG Node ...\n");
 
-    SymbolTableInfo* symTable = SymbolTableInfo::Symbolnfo();
+    SymbolTableInfo *symTable = SymbolTableInfo::Symbolnfo();
 
     pag->addBlackholeObjNode();
     pag->addConstantObjNode();
@@ -115,33 +124,33 @@ void PAGBuilder::initalNode() {
     pag->addNullPtrNode();
 
     for (SymbolTableInfo::ValueToIDMapTy::iterator iter =
-                symTable->valSyms().begin(); iter != symTable->valSyms().end();
-            ++iter) {
+            symTable->valSyms().begin(); iter != symTable->valSyms().end();
+         ++iter) {
         DBOUT(DPAGBuild, outs() << "add val node " << iter->second << "\n");
-        if(iter->second == symTable->blkPtrSymID() || iter->second == symTable->nullPtrSymID())
+        if (iter->second == symTable->blkPtrSymID() || iter->second == symTable->nullPtrSymID())
             continue;
         pag->addValNode(iter->first, iter->second);
     }
 
     for (SymbolTableInfo::ValueToIDMapTy::iterator iter =
-                symTable->objSyms().begin(); iter != symTable->objSyms().end();
-            ++iter) {
+            symTable->objSyms().begin(); iter != symTable->objSyms().end();
+         ++iter) {
         DBOUT(DPAGBuild, outs() << "add obj node " << iter->second << "\n");
-        if(iter->second == symTable->blackholeSymID() || iter->second == symTable->constantSymID())
+        if (iter->second == symTable->blackholeSymID() || iter->second == symTable->constantSymID())
             continue;
         pag->addObjNode(iter->first, iter->second);
     }
 
     for (SymbolTableInfo::FunToIDMapTy::iterator iter =
-                symTable->retSyms().begin(); iter != symTable->retSyms().end();
-            ++iter) {
+            symTable->retSyms().begin(); iter != symTable->retSyms().end();
+         ++iter) {
         DBOUT(DPAGBuild, outs() << "add ret node " << iter->second << "\n");
         pag->addRetNode(iter->first, iter->second);
     }
 
     for (SymbolTableInfo::FunToIDMapTy::iterator iter =
-                symTable->varargSyms().begin();
-            iter != symTable->varargSyms().end(); ++iter) {
+            symTable->varargSyms().begin();
+         iter != symTable->varargSyms().end(); ++iter) {
         DBOUT(DPAGBuild, outs() << "add vararg node " << iter->second << "\n");
         pag->addVarargNode(iter->first, iter->second);
     }
@@ -157,26 +166,26 @@ void PAGBuilder::initalNode() {
  * otherwise if "i" is a variable determined by runtime, then it is a variant offset
  * Return TRUE if the offset of this GEP insn is a constant.
  */
-bool PAGBuilder::computeGepOffset(const User *V, LocationSet& ls) {
-    return SymbolTableInfo::Symbolnfo()->computeGepOffset(V,ls);
+bool PAGBuilder::computeGepOffset(const User *V, LocationSet &ls) {
+    return SymbolTableInfo::Symbolnfo()->computeGepOffset(V, ls);
 }
 
 /*!
  * Handle constant expression, and connect the gep edge
  */
 void PAGBuilder::processCE(const Value *val) {
-    if (const Constant* ref = dyn_cast<Constant>(val)) {
+    if (const Constant *ref = dyn_cast<Constant>(val)) {
         if (!isa<PointerType>(ref->getType()))
             return;
-        if (const ConstantExpr* gepce = isGepConstantExpr(ref)) {
+        if (const ConstantExpr *gepce = isGepConstantExpr(ref)) {
             DBOUT(DPAGBuild,
                   outs() << "handle gep constant expression " << *ref << "\n");
-            const Constant* opnd = gepce->getOperand(0);
+            const Constant *opnd = gepce->getOperand(0);
             LocationSet ls;
             bool constGep = computeGepOffset(gepce, ls);
             // must invoke pag methods here, otherwise it will be a dead recursion cycle
-            const llvm::Value* cval = pag->getCurrentValue();
-            const llvm::BasicBlock* cbb = pag->getCurrentBB();
+            const llvm::Value *cval = pag->getCurrentValue();
+            const llvm::BasicBlock *cbb = pag->getCurrentBB();
             pag->setCurrentLocation(gepce, NULL);
             /*
              * The gep edge created are like constexpr (same edge may appear at multiple callsites)
@@ -186,43 +195,42 @@ void PAGBuilder::processCE(const Value *val) {
             pag->setCurrentLocation(cval, cbb);
             // handle recursive constant express case (gep (bitcast (gep X 1)) 1)
             processCE(opnd);
-        }
-        else if (const ConstantExpr* castce = isCastConstantExpr(ref)) {
+        } else if (const ConstantExpr *castce = isCastConstantExpr(ref)) {
             DBOUT(DPAGBuild,
                   outs() << "handle cast constant expression " << *ref << "\n");
-            const Constant* opnd = castce->getOperand(0);
-            const llvm::Value* cval = pag->getCurrentValue();
-            const llvm::BasicBlock* cbb = pag->getCurrentBB();
+            const Constant *opnd = castce->getOperand(0);
+            const llvm::Value *cval = pag->getCurrentValue();
+            const llvm::BasicBlock *cbb = pag->getCurrentBB();
             pag->setCurrentLocation(castce, NULL);
             pag->addCopyEdge(pag->getValueNode(opnd), pag->getValueNode(castce));
             pag->setCurrentLocation(cval, cbb);
             processCE(opnd);
-        }
-        else if (const ConstantExpr* selectce = isSelectConstantExpr(ref)) {
+        } else if (const ConstantExpr *selectce = isSelectConstantExpr(ref)) {
             DBOUT(DPAGBuild,
                   outs() << "handle select constant expression " << *ref << "\n");
-            const Constant* src1 = selectce->getOperand(1);
-            const Constant* src2 = selectce->getOperand(2);
-            const llvm::Value* cval = pag->getCurrentValue();
-            const llvm::BasicBlock* cbb = pag->getCurrentBB();
+            const Constant *src1 = selectce->getOperand(1);
+            const Constant *src2 = selectce->getOperand(2);
+            const llvm::Value *cval = pag->getCurrentValue();
+            const llvm::BasicBlock *cbb = pag->getCurrentBB();
             pag->setCurrentLocation(selectce, NULL);
             NodeID nsrc1 = pag->getValueNode(src1);
             NodeID nsrc2 = pag->getValueNode(src2);
             NodeID nres = pag->getValueNode(selectce);
             pag->addCopyEdge(nsrc1, nres);
             pag->addCopyEdge(nsrc2, nres);
-            pag->addPhiNode(pag->getPAGNode(nres),pag->getPAGNode(nsrc1),NULL);
-            pag->addPhiNode(pag->getPAGNode(nres),pag->getPAGNode(nsrc2),NULL);
+            pag->addPhiNode(pag->getPAGNode(nres), pag->getPAGNode(nsrc1), NULL);
+            pag->addPhiNode(pag->getPAGNode(nres), pag->getPAGNode(nsrc2), NULL);
             pag->setCurrentLocation(cval, cbb);
             processCE(src1);
             processCE(src2);
         }
-        // if we meet a int2ptr, then it points-to black hole
-        else if (const ConstantExpr* int2Ptrce = isInt2PtrConstantExpr(ref)) {
+            // if we meet a int2ptr, then it points-to black hole
+        else if (const ConstantExpr *int2Ptrce = isInt2PtrConstantExpr(ref)) {
             pag->addGlobalBlackHoleAddrEdge(pag->getValueNode(int2Ptrce), int2Ptrce);
         }
     }
 }
+
 /*!
  * Get the field of the global variable node
  * FIXME:Here we only get the field that actually used in the program
@@ -234,8 +242,8 @@ NodeID PAGBuilder::getGlobalVarField(const GlobalVariable *gvar, u32_t offset, u
     if (offset == 0 && gvar->getInitializer()->getType()->isSingleValueType()) {
         return getValueNode(gvar);
     }
-    /// if we did not find the constant expression in the program,
-    /// then we need to create a gep node for this field
+        /// if we did not find the constant expression in the program,
+        /// then we need to create a gep node for this field
     else {
         const Type *gvartype = gvar->getType();
         while (const PointerType *ptype = dyn_cast<PointerType>(gvartype))
@@ -259,7 +267,7 @@ void PAGBuilder::InitialGlobal(const GlobalVariable *gvar, Constant *C,
                                u32_t offset, u32_t fieldidx) {
     DBOUT(DPAGBuild,
           outs() << "global " << *gvar << " constant initializer: " << *C
-          << "\n");
+                 << "\n");
 
     if (C->getType()->isSingleValueType() && isa<PointerType>(C->getType())) {
         NodeID src = getValueNode(C);
@@ -286,8 +294,8 @@ void PAGBuilder::InitialGlobal(const GlobalVariable *gvar, Constant *C,
 
     } else if (isa<ConstantStruct>(C)) {
         const StructType *sty = cast<StructType>(C->getType());
-        const std::vector<u32_t>& offsetvect =
-            SymbolTableInfo::Symbolnfo()->getStructOffsetVec(sty);
+        const std::vector<u32_t> &offsetvect =
+                SymbolTableInfo::Symbolnfo()->getStructOffsetVec(sty);
         for (u32_t i = 0, e = C->getNumOperands(); i != e; i++) {
             u32_t off = offsetvect[i];
             InitialGlobal(gvar, cast<Constant>(C->getOperand(i)), offset + off, i);
@@ -301,12 +309,12 @@ void PAGBuilder::InitialGlobal(const GlobalVariable *gvar, Constant *C,
 /*!
  *  Visit global variables for building PAG
  */
-void PAGBuilder::visitGlobal(llvm::Module& module) {
+void PAGBuilder::visitGlobal(llvm::Module &module) {
 
     /// initialize global variable
     for (Module::global_iterator I = module.global_begin(), E =
-                module.global_end(); I != E; ++I) {
-        GlobalVariable * gvar = &*I;
+            module.global_end(); I != E; ++I) {
+        GlobalVariable *gvar = &*I;
         NodeID idx = getValueNode(gvar);
         NodeID obj = getObjectNode(gvar);
         pag->setCurrentLocation(gvar, NULL);
@@ -321,8 +329,8 @@ void PAGBuilder::visitGlobal(llvm::Module& module) {
 
     /// initialize global functions
     for (Module::iterator I = module.begin(), E =
-                module.end(); I != E; ++I) {
-        Function * fun = &*I;
+            module.end(); I != E; ++I) {
+        Function *fun = &*I;
         NodeID idx = getValueNode(fun);
         NodeID obj = getObjectNode(fun);
 
@@ -337,7 +345,7 @@ void PAGBuilder::visitGlobal(llvm::Module& module) {
         NodeID src = pag->getValueNode((*I).getAliasee());
         processCE((*I).getAliasee());
         pag->setCurrentLocation(&*I, NULL);
-        pag->addCopyEdge(src,dst);
+        pag->addCopyEdge(src, dst);
     }
 }
 
@@ -372,9 +380,9 @@ void PAGBuilder::visitPHINode(PHINode &inst) {
 
         for (Size_t i = 0; i < inst.getNumIncomingValues(); ++i) {
             NodeID src = getValueNode(inst.getIncomingValue(i));
-            const BasicBlock* bb = inst.getIncomingBlock(i);
+            const BasicBlock *bb = inst.getIncomingBlock(i);
             pag->addCopyEdge(src, dst);
-            pag->addPhiNode(pag->getPAGNode(dst),pag->getPAGNode(src),bb);
+            pag->addPhiNode(pag->getPAGNode(dst), pag->getPAGNode(src), bb);
         }
     }
 
@@ -414,8 +422,37 @@ void PAGBuilder::visitStoreInst(StoreInst &inst) {
 
         pag->addStoreEdge(src, dst);
     }
+}
+
+
+void PAGBuilder::visitAtomicCmpXchgInst(AtomicCmpXchgInst &inst) {
+    auto dbgLoc = &inst.getDebugLoc();  // 尝试获取调试位置信息
+    if (dbgLoc != nullptr) {
+        llvm::errs() << "Instruction at "
+                     << dbgLoc->getLine() // 获取文件名
+                     << ":"
+                     << "\n";
+    }
+    // StoreInst itself should always not be a pointer type
+    assert(!isa<PointerType>(inst.getType()));
+
+    // store
+    NodeID dst = getValueNode(inst.getPointerOperand());
+    NodeID src = getValueNode(inst.getNewValOperand());
+    pag->addCopyEdge(src, dst);
 
 }
+
+void PAGBuilder::visitAtomicRMWInst(AtomicRMWInst &inst) {
+    // AtomicRMWInst should not be a pointer type itself
+    assert(!isa<PointerType>(inst.getType()));
+    NodeID dst = getValueNode(inst.getPointerOperand());
+    // Since AtomicRMWInst modifies the value at the pointer, it acts as both a source and destination
+    NodeID src = getValueNode(inst.getValOperand());
+    // Add a read edge from the pointer to the value, then a write edge back to the pointer
+    pag->addStoreEdge(src, dst);
+}
+
 
 /*!
  * Visit getelementptr instructions
@@ -424,7 +461,7 @@ void PAGBuilder::visitGetElementPtrInst(GetElementPtrInst &inst) {
 
     // GetElementPtrInst should always be a pointer or a vector contains pointers
     // TODO: for now we don't handle vector type here
-    if(isa<VectorType>(inst.getType()))
+    if (isa<VectorType>(inst.getType()))
         return;
 
     assert(isa<PointerType>(inst.getType()));
@@ -445,10 +482,17 @@ void PAGBuilder::visitGetElementPtrInst(GetElementPtrInst &inst) {
  */
 void PAGBuilder::visitIntToPtrInst(llvm::IntToPtrInst &inst) {
 
-    DBOUT(DPAGBuild, outs() << "process cast  " << inst << " \n");
     NodeID dst = getValueNode(&inst);
-    pag->addBlackHoleAddrEdge(dst);
+//    pag->addBlackHoleAddrEdge(dst);
+    NodeID src = getValueNode(inst.getOperand(0));
+    pag->addCopyEdge(src, dst);
 }
+
+//void PAGBuilder::visitBitCastInst(llvm::BitCastInst &inst) {
+//    NodeID dst = getValueNode(&inst);
+//    NodeID src = getValueNode(inst.getOperand(0));
+//    pag->addCopyEdge(src, dst);
+//}
 
 /*
  * Visit cast instructions
@@ -460,15 +504,14 @@ void PAGBuilder::visitCastInst(CastInst &inst) {
         DBOUT(DPAGBuild, outs() << "process cast  " << inst << " \n");
         NodeID dst = getValueNode(&inst);
 
-        Value * opnd = inst.getOperand(0);
+        Value *opnd = inst.getOperand(0);
         if (!isa<PointerType>(opnd->getType()))
             opnd = stripAllCasts(opnd);
 
         if (isa<PointerType>(opnd->getType())) {
             NodeID src = getValueNode(opnd);
             pag->addCopyEdge(src, dst);
-        }
-        else {
+        } else {
             assert(isa<IntToPtrInst>(&inst) && "what else do we have??");
             // This is a int2ptr cast
             pag->addBlackHoleAddrEdge(dst);
@@ -491,8 +534,8 @@ void PAGBuilder::visitSelectInst(SelectInst &inst) {
         pag->addCopyEdge(src1, dst);
         pag->addCopyEdge(src2, dst);
         /// Two operands have same incoming basic block, both are the current BB
-        pag->addPhiNode(pag->getPAGNode(dst),pag->getPAGNode(src1),inst.getParent());
-        pag->addPhiNode(pag->getPAGNode(dst),pag->getPAGNode(src2),inst.getParent());
+        pag->addPhiNode(pag->getPAGNode(dst), pag->getPAGNode(src1), inst.getParent());
+        pag->addPhiNode(pag->getPAGNode(dst), pag->getPAGNode(src2), inst.getParent());
     }
 }
 
@@ -502,18 +545,18 @@ void PAGBuilder::visitSelectInst(SelectInst &inst) {
 void PAGBuilder::visitCallSite(CallSite cs) {
 
     // skip llvm debug info intrinsic
-    if(isInstrinsicDbgInst(cs.getInstruction()))
+    if (isInstrinsicDbgInst(cs.getInstruction()))
         return;
 
     DBOUT(DPAGBuild,
           outs() << "process callsite " << *cs.getInstruction() << "\n");
 
     /// Collect callsite arguments and returns
-    for(CallSite::arg_iterator itA = cs.arg_begin(), ieA = cs.arg_end(); itA!=ieA; ++itA)
-        pag->addCallSiteArgs(cs,pag->getPAGNode(getValueNode(*itA)));
+    for (CallSite::arg_iterator itA = cs.arg_begin(), ieA = cs.arg_end(); itA != ieA; ++itA)
+        pag->addCallSiteArgs(cs, pag->getPAGNode(getValueNode(*itA)));
 
-    if(!cs.getType()->isVoidTy())
-        pag->addCallSiteRets(cs,pag->getPAGNode(getValueNode(cs.getInstruction())));
+    if (!cs.getType()->isVoidTy())
+        pag->addCallSiteRets(cs, pag->getPAGNode(getValueNode(cs.getInstruction())));
 
     const Function *callee = getCallee(cs);
 
@@ -538,7 +581,7 @@ void PAGBuilder::visitReturnInst(ReturnInst &inst) {
 
     //ignore void and non-ptr return statements
     if (inst.getNumOperands()
-            && (isa<PointerType>(inst.getOperand(0)->getType()))) {
+        && (isa<PointerType>(inst.getOperand(0)->getType()))) {
 
         DBOUT(DPAGBuild, outs() << "process return  " << inst << " \n");
 
@@ -647,14 +690,14 @@ void PAGBuilder::handleDirectCall(CallSite cs, const Function *F) {
             Value *AA = *itA;
             if (isa<PointerType>(AA->getType())) {
                 NodeID vnAA = getValueNode(AA);
-                pag->addCallEdge(vnAA,vaF, cs.getInstruction());
+                pag->addCallEdge(vnAA, vaF, cs.getInstruction());
             } else {
                 // This is a int2ptr cast during parameter passing
                 // pag->addBlackHoleAddrEdge(vaF);
             }
         }
     }
-    if(itA != ieA) {
+    if (itA != ieA) {
         /// FIXME: this assertion should be placed for correct checking except
         /// bug program like 188.ammp, 300.twolf
         wrnMsg("too many args to non-vararg func.");
@@ -677,8 +720,8 @@ const Type *PAGBuilder::getBaseTypeAndFlattenedFields(Value *V, std::vector<Loca
  */
 void PAGBuilder::addComplexConsForExt(Value *D, Value *S, u32_t sz) {
     assert(D && S);
-    NodeID vnD= getValueNode(D), vnS= getValueNode(S);
-    if(!vnD || !vnS)
+    NodeID vnD = getValueNode(D), vnS = getValueNode(S);
+    if (!vnD || !vnS)
         return;
 
     std::vector<LocationSet> fields;
@@ -688,7 +731,7 @@ void PAGBuilder::addComplexConsForExt(Value *D, Value *S, u32_t sz) {
     std::vector<LocationSet> dstFields;
     const Type *stype = getBaseTypeAndFlattenedFields(S, srcFields);
     const Type *dtype = getBaseTypeAndFlattenedFields(D, dstFields);
-    if(srcFields.size() > dstFields.size())
+    if (srcFields.size() > dstFields.size())
         fields = dstFields;
     else
         fields = srcFields;
@@ -701,11 +744,11 @@ void PAGBuilder::addComplexConsForExt(Value *D, Value *S, u32_t sz) {
 
     //For each field (i), add (Ti = *S + i) and (*D + i = Ti).
     for (u32_t index = 0; index < sz; index++) {
-        NodeID dField = pag->getGepValNode(D,fields[index],dtype,index);
-        NodeID sField = pag->getGepValNode(S,fields[index],stype,index);
+        NodeID dField = pag->getGepValNode(D, fields[index], dtype, index);
+        NodeID sField = pag->getGepValNode(S, fields[index], stype, index);
         NodeID dummy = pag->addDummyValNode();
-        pag->addLoadEdge(sField,dummy);
-        pag->addStoreEdge(dummy,dField);
+        pag->addLoadEdge(sField, dummy);
+        pag->addStoreEdge(dummy, dField);
     }
 }
 
@@ -714,7 +757,7 @@ void PAGBuilder::addComplexConsForExt(Value *D, Value *S, u32_t sz) {
  * Handle external calls
  */
 void PAGBuilder::handleExtCall(CallSite cs, const Function *callee) {
-    const Instruction* inst = cs.getInstruction();
+    const Instruction *inst = cs.getInstruction();
     if (isHeapAllocOrStaticExtCall(cs)) {
         NodeID obj = getObjectNode(inst);
         // case 1: ret = new obj
@@ -723,7 +766,7 @@ void PAGBuilder::handleExtCall(CallSite cs, const Function *callee) {
             NodeID obj = getObjectNode(inst);
             pag->addAddrEdge(obj, val);
         }
-        // case 2: *arg = new obj
+            // case 2: *arg = new obj
         else {
             assert(isHeapAllocExtCallViaArg(cs) && "Must be heap alloc call via arg.");
             int arg_pos = getHeapAllocHoldingArgPosition(callee);
@@ -739,236 +782,234 @@ void PAGBuilder::handleExtCall(CallSite cs, const Function *callee) {
                 wrnMsg("Arg receiving new object must be pointer type");
             }
         }
-    }
-    else {
-        if(isExtCall(callee)) {
-            ExtAPI::extf_t tF= extCallTy(callee);
-            switch(tF) {
-            case ExtAPI::EFT_REALLOC: {
-                if(!isa<PointerType>(inst->getType()))
+    } else {
+        if (isExtCall(callee)) {
+            ExtAPI::extf_t tF = extCallTy(callee);
+            switch (tF) {
+                case ExtAPI::EFT_REALLOC: {
+                    if (!isa<PointerType>(inst->getType()))
+                        break;
+                    // e.g. void *realloc(void *ptr, size_t size)
+                    // if ptr is null then we will treat it as a malloc
+                    // if ptr is not null, then we assume a new data memory will be attached to
+                    // the tail of old allocated memory block.
+                    if (isa<ConstantPointerNull>(cs.getArgument(0))) {
+                        NodeID val = getValueNode(inst);
+                        NodeID obj = getObjectNode(inst);
+                        pag->addAddrEdge(obj, val);
+                    }
                     break;
-                // e.g. void *realloc(void *ptr, size_t size)
-                // if ptr is null then we will treat it as a malloc
-                // if ptr is not null, then we assume a new data memory will be attached to
-                // the tail of old allocated memory block.
-                if(isa<ConstantPointerNull>(cs.getArgument(0))) {
-                    NodeID val = getValueNode(inst);
-                    NodeID obj = getObjectNode(inst);
-                    pag->addAddrEdge(obj, val);
                 }
-                break;
-            }
-            case ExtAPI::EFT_L_A0:
-            case ExtAPI::EFT_L_A1:
-            case ExtAPI::EFT_L_A2:
-            case ExtAPI::EFT_L_A8: {
-                if(!isa<PointerType>(inst->getType()))
-                    break;
-                NodeID dstNode = getValueNode(inst);
-                Size_t arg_pos;
-                switch(tF) {
+                case ExtAPI::EFT_L_A0:
                 case ExtAPI::EFT_L_A1:
-                    arg_pos= 1;
-                    break;
                 case ExtAPI::EFT_L_A2:
-                    arg_pos= 2;
-                    break;
-                case ExtAPI::EFT_L_A8:
-                    arg_pos= 8;
-                    break;
-                default:
-                    arg_pos= 0;
-                }
-                Value *src= cs.getArgument(arg_pos);
-                if(isa<PointerType>(src->getType())) {
-                    NodeID srcNode = getValueNode(src);
-                    pag->addCopyEdge(srcNode, dstNode);
-                } else
-                    pag->addBlackHoleAddrEdge(dstNode);
-                break;
-                break;
-            }
-            case ExtAPI::EFT_L_A0__A0R_A1R: {
-                addComplexConsForExt(cs.getArgument(0), cs.getArgument(1));
-                //memcpy returns the dest.
-                if(isa<PointerType>(inst->getType())) {
-                    pag->addCopyEdge(getValueNode(cs.getArgument(0)), getValueNode(inst));
-                }
-                break;
-            }
-            case ExtAPI::EFT_A1R_A0R:
-                addComplexConsForExt(cs.getArgument(1), cs.getArgument(0));
-                break;
-            case ExtAPI::EFT_A3R_A1R_NS:
-                //These func. are never used to copy structs, so the size is 1.
-                addComplexConsForExt(cs.getArgument(3), cs.getArgument(1), 1);
-                break;
-            case ExtAPI::EFT_A1R_A0: {
-                NodeID vnD= getValueNode(cs.getArgument(1));
-                NodeID vnS= getValueNode(cs.getArgument(0));
-                if(vnD && vnS)
-                    pag->addStoreEdge(vnS,vnD);
-                break;
-            }
-            case ExtAPI::EFT_A2R_A1: {
-                NodeID vnD= getValueNode(cs.getArgument(2));
-                NodeID vnS= getValueNode(cs.getArgument(1));
-                if(vnD && vnS)
-                    pag->addStoreEdge(vnS,vnD);
-                break;
-            }
-            case ExtAPI::EFT_A4R_A1: {
-                NodeID vnD= getValueNode(cs.getArgument(4));
-                NodeID vnS= getValueNode(cs.getArgument(1));
-                if(vnD && vnS)
-                    pag->addStoreEdge(vnS,vnD);
-                break;
-            }
-            case ExtAPI::EFT_L_A0__A2R_A0: {
-                if(isa<PointerType>(inst->getType())) {
-                    //Do the L_A0 part if the retval is used.
-                    NodeID vnD= getValueNode(inst);
-                    Value *src= cs.getArgument(0);
-                    if(isa<PointerType>(src->getType())) {
-                        NodeID vnS= getValueNode(src);
-                        if(vnS)
-                            pag->addCopyEdge(vnS,vnD);
+                case ExtAPI::EFT_L_A8: {
+                    if (!isa<PointerType>(inst->getType()))
+                        break;
+                    NodeID dstNode = getValueNode(inst);
+                    Size_t arg_pos;
+                    switch (tF) {
+                        case ExtAPI::EFT_L_A1:
+                            arg_pos = 1;
+                            break;
+                        case ExtAPI::EFT_L_A2:
+                            arg_pos = 2;
+                            break;
+                        case ExtAPI::EFT_L_A8:
+                            arg_pos = 8;
+                            break;
+                        default:
+                            arg_pos = 0;
+                    }
+                    Value *src = cs.getArgument(arg_pos);
+                    if (isa<PointerType>(src->getType())) {
+                        NodeID srcNode = getValueNode(src);
+                        pag->addCopyEdge(srcNode, dstNode);
                     } else
-                        pag->addBlackHoleAddrEdge(vnD);
+                        pag->addBlackHoleAddrEdge(dstNode);
+                    break;
+                    break;
                 }
-                //Do the A2R_A0 part.
-                NodeID vnD= getValueNode(cs.getArgument(2));
-                NodeID vnS= getValueNode(cs.getArgument(0));
-                if(vnD && vnS)
-                    pag->addStoreEdge(vnS,vnD);
-                break;
-            }
-            case ExtAPI::EFT_A0R_NEW:
-            case ExtAPI::EFT_A1R_NEW:
-            case ExtAPI::EFT_A2R_NEW:
-            case ExtAPI::EFT_A4R_NEW:
-            case ExtAPI::EFT_A11R_NEW: {
-                assert(!"Alloc via arg cases are not handled here.");
-                break;
-            }
-            case ExtAPI::EFT_ALLOC:
-            case ExtAPI::EFT_NOSTRUCT_ALLOC:
-            case ExtAPI::EFT_STAT:
-            case ExtAPI::EFT_STAT2:
-                if(isa<PointerType>(inst->getType()))
-                    assert(!"alloc type func. are not handled here");
-                else {
-                    // fdopen will return an integer in LLVM IR.
-                    wrnMsg("alloc type func do not return pointer type");
+                case ExtAPI::EFT_L_A0__A0R_A1R: {
+                    addComplexConsForExt(cs.getArgument(0), cs.getArgument(1));
+                    //memcpy returns the dest.
+                    if (isa<PointerType>(inst->getType())) {
+                        pag->addCopyEdge(getValueNode(cs.getArgument(0)), getValueNode(inst));
+                    }
+                    break;
                 }
-                break;
-            case ExtAPI::EFT_NOOP:
-            case ExtAPI::EFT_FREE:
-                break;
-            case ExtAPI::EFT_STD_RB_TREE_INSERT_AND_REBALANCE: {
-                Value *vArg1 = cs.getArgument(1);
-                Value *vArg3 = cs.getArgument(3);
-
-                // We have vArg3 points to the entry of _Rb_tree_node_base { color; parent; left; right; }.
-                // Now we calculate the offset from base to vArg3
-                NodeID vnArg3 = pag->getValueNode(vArg3);
-                Size_t offset = pag->getLocationSetFromBaseNode(vnArg3).getOffset();
-
-                // We get all flattened fields of base
-                vector<LocationSet> fields;
-                const Type *type = getBaseTypeAndFlattenedFields(vArg3, fields);
-                assert(fields.size() >= 4 && "_Rb_tree_node_base should have at least 4 fields.\n");
-
-                // We summarize the side effects: arg3->parent = arg1, arg3->left = arg1, arg3->right = arg1
-                // Note that arg0 is aligned with "offset".
-                for (int i = offset + 1; i <= offset + 3; ++i) {
-                    NodeID vnD = pag->getGepValNode(vArg3, fields[i], type, i);
-                    NodeID vnS = getValueNode(vArg1);
-                    if(vnD && vnS)
-                        pag->addStoreEdge(vnS,vnD);
+                case ExtAPI::EFT_A1R_A0R:
+                    addComplexConsForExt(cs.getArgument(1), cs.getArgument(0));
+                    break;
+                case ExtAPI::EFT_A3R_A1R_NS:
+                    //These func. are never used to copy structs, so the size is 1.
+                    addComplexConsForExt(cs.getArgument(3), cs.getArgument(1), 1);
+                    break;
+                case ExtAPI::EFT_A1R_A0: {
+                    NodeID vnD = getValueNode(cs.getArgument(1));
+                    NodeID vnS = getValueNode(cs.getArgument(0));
+                    if (vnD && vnS)
+                        pag->addStoreEdge(vnS, vnD);
+                    break;
                 }
-                break;
-            }
-            case ExtAPI::EFT_STD_RB_TREE_INCREMENT: {
-                NodeID vnD = pag->getValueNode(inst);
-
-                Value *vArg = cs.getArgument(0);
-                NodeID vnArg = pag->getValueNode(vArg);
-                Size_t offset = pag->getLocationSetFromBaseNode(vnArg).getOffset();
-
-                // We get all fields
-                vector<LocationSet> fields;
-                const Type *type = getBaseTypeAndFlattenedFields(vArg,fields);
-                assert(fields.size() >= 4 && "_Rb_tree_node_base should have at least 4 fields.\n");
-
-                // We summarize the side effects: ret = arg->parent, ret = arg->left, ret = arg->right
-                // Note that arg0 is aligned with "offset".
-                for (int i = offset + 1; i <= offset + 3; ++i) {
-                    NodeID vnS = pag->getGepValNode(vArg, fields[i], type, i);
-                    if(vnD && vnS)
-                        pag->addStoreEdge(vnS,vnD);
-                }
-                break;
-            }
-            case ExtAPI::CPP_EFT_A0R_A1: {
-                SymbolTableInfo* symTable = SymbolTableInfo::Symbolnfo();
-                if (symTable->getModelConstants()) {
-                    NodeID vnD = pag->getValueNode(cs.getArgument(0));
-                    NodeID vnS = pag->getValueNode(cs.getArgument(1));
-                    pag->addStoreEdge(vnS, vnD);
-                }
-                break;
-            }
-            case ExtAPI::CPP_EFT_A0R_A1R: {
-                SymbolTableInfo* symTable = SymbolTableInfo::Symbolnfo();
-                if (symTable->getModelConstants()) {
-                    NodeID vnD = getValueNode(cs.getArgument(0));
+                case ExtAPI::EFT_A2R_A1: {
+                    NodeID vnD = getValueNode(cs.getArgument(2));
                     NodeID vnS = getValueNode(cs.getArgument(1));
-                    assert(vnD && vnS && "dst or src not exist?");
-                    NodeID dummy = pag->addDummyValNode();
-                    pag->addLoadEdge(vnS,dummy);
-                    pag->addStoreEdge(dummy,vnD);
+                    if (vnD && vnS)
+                        pag->addStoreEdge(vnS, vnD);
+                    break;
                 }
-                break;
-            }
-            case ExtAPI::CPP_EFT_A1R: {
-                SymbolTableInfo* symTable = SymbolTableInfo::Symbolnfo();
-                if (symTable->getModelConstants()) {
+                case ExtAPI::EFT_A4R_A1: {
+                    NodeID vnD = getValueNode(cs.getArgument(4));
                     NodeID vnS = getValueNode(cs.getArgument(1));
-                    assert(vnS && "src not exist?");
-                    NodeID dummy = pag->addDummyValNode();
-                    pag->addLoadEdge(vnS,dummy);
+                    if (vnD && vnS)
+                        pag->addStoreEdge(vnS, vnD);
+                    break;
                 }
-                break;
-            }
-            //default:
-            case ExtAPI::EFT_OTHER: {
-                if(isa<PointerType>(inst->getType())) {
-                    std::string str;
-                    raw_string_ostream rawstr(str);
-                    rawstr << "function " << callee->getName() << " not in the external function summary list";
-                    wrnMsg(rawstr.str());
-                    //assert("unknown ext.func type");
+                case ExtAPI::EFT_L_A0__A2R_A0: {
+                    if (isa<PointerType>(inst->getType())) {
+                        //Do the L_A0 part if the retval is used.
+                        NodeID vnD = getValueNode(inst);
+                        Value *src = cs.getArgument(0);
+                        if (isa<PointerType>(src->getType())) {
+                            NodeID vnS = getValueNode(src);
+                            if (vnS)
+                                pag->addCopyEdge(vnS, vnD);
+                        } else
+                            pag->addBlackHoleAddrEdge(vnD);
+                    }
+                    //Do the A2R_A0 part.
+                    NodeID vnD = getValueNode(cs.getArgument(2));
+                    NodeID vnS = getValueNode(cs.getArgument(0));
+                    if (vnD && vnS)
+                        pag->addStoreEdge(vnS, vnD);
+                    break;
                 }
-            }
+                case ExtAPI::EFT_A0R_NEW:
+                case ExtAPI::EFT_A1R_NEW:
+                case ExtAPI::EFT_A2R_NEW:
+                case ExtAPI::EFT_A4R_NEW:
+                case ExtAPI::EFT_A11R_NEW: {
+                    assert(!"Alloc via arg cases are not handled here.");
+                    break;
+                }
+                case ExtAPI::EFT_ALLOC:
+                case ExtAPI::EFT_NOSTRUCT_ALLOC:
+                case ExtAPI::EFT_STAT:
+                case ExtAPI::EFT_STAT2:
+                    if (isa<PointerType>(inst->getType()))
+                        assert(!"alloc type func. are not handled here");
+                    else {
+                        // fdopen will return an integer in LLVM IR.
+                        wrnMsg("alloc type func do not return pointer type");
+                    }
+                    break;
+                case ExtAPI::EFT_NOOP:
+                case ExtAPI::EFT_FREE:
+                    break;
+                case ExtAPI::EFT_STD_RB_TREE_INSERT_AND_REBALANCE: {
+                    Value *vArg1 = cs.getArgument(1);
+                    Value *vArg3 = cs.getArgument(3);
+
+                    // We have vArg3 points to the entry of _Rb_tree_node_base { color; parent; left; right; }.
+                    // Now we calculate the offset from base to vArg3
+                    NodeID vnArg3 = pag->getValueNode(vArg3);
+                    Size_t offset = pag->getLocationSetFromBaseNode(vnArg3).getOffset();
+
+                    // We get all flattened fields of base
+                    vector<LocationSet> fields;
+                    const Type *type = getBaseTypeAndFlattenedFields(vArg3, fields);
+                    assert(fields.size() >= 4 && "_Rb_tree_node_base should have at least 4 fields.\n");
+
+                    // We summarize the side effects: arg3->parent = arg1, arg3->left = arg1, arg3->right = arg1
+                    // Note that arg0 is aligned with "offset".
+                    for (int i = offset + 1; i <= offset + 3; ++i) {
+                        NodeID vnD = pag->getGepValNode(vArg3, fields[i], type, i);
+                        NodeID vnS = getValueNode(vArg1);
+                        if (vnD && vnS)
+                            pag->addStoreEdge(vnS, vnD);
+                    }
+                    break;
+                }
+                case ExtAPI::EFT_STD_RB_TREE_INCREMENT: {
+                    NodeID vnD = pag->getValueNode(inst);
+
+                    Value *vArg = cs.getArgument(0);
+                    NodeID vnArg = pag->getValueNode(vArg);
+                    Size_t offset = pag->getLocationSetFromBaseNode(vnArg).getOffset();
+
+                    // We get all fields
+                    vector<LocationSet> fields;
+                    const Type *type = getBaseTypeAndFlattenedFields(vArg, fields);
+                    assert(fields.size() >= 4 && "_Rb_tree_node_base should have at least 4 fields.\n");
+
+                    // We summarize the side effects: ret = arg->parent, ret = arg->left, ret = arg->right
+                    // Note that arg0 is aligned with "offset".
+                    for (int i = offset + 1; i <= offset + 3; ++i) {
+                        NodeID vnS = pag->getGepValNode(vArg, fields[i], type, i);
+                        if (vnD && vnS)
+                            pag->addStoreEdge(vnS, vnD);
+                    }
+                    break;
+                }
+                case ExtAPI::CPP_EFT_A0R_A1: {
+                    SymbolTableInfo *symTable = SymbolTableInfo::Symbolnfo();
+                    if (symTable->getModelConstants()) {
+                        NodeID vnD = pag->getValueNode(cs.getArgument(0));
+                        NodeID vnS = pag->getValueNode(cs.getArgument(1));
+                        pag->addStoreEdge(vnS, vnD);
+                    }
+                    break;
+                }
+                case ExtAPI::CPP_EFT_A0R_A1R: {
+                    SymbolTableInfo *symTable = SymbolTableInfo::Symbolnfo();
+                    if (symTable->getModelConstants()) {
+                        NodeID vnD = getValueNode(cs.getArgument(0));
+                        NodeID vnS = getValueNode(cs.getArgument(1));
+                        assert(vnD && vnS && "dst or src not exist?");
+                        NodeID dummy = pag->addDummyValNode();
+                        pag->addLoadEdge(vnS, dummy);
+                        pag->addStoreEdge(dummy, vnD);
+                    }
+                    break;
+                }
+                case ExtAPI::CPP_EFT_A1R: {
+                    SymbolTableInfo *symTable = SymbolTableInfo::Symbolnfo();
+                    if (symTable->getModelConstants()) {
+                        NodeID vnS = getValueNode(cs.getArgument(1));
+                        assert(vnS && "src not exist?");
+                        NodeID dummy = pag->addDummyValNode();
+                        pag->addLoadEdge(vnS, dummy);
+                    }
+                    break;
+                }
+                    //default:
+                case ExtAPI::EFT_OTHER: {
+                    if (isa<PointerType>(inst->getType())) {
+                        std::string str;
+                        raw_string_ostream rawstr(str);
+                        rawstr << "function " << callee->getName() << " not in the external function summary list";
+                        wrnMsg(rawstr.str());
+                        //assert("unknown ext.func type");
+                    }
+                }
             }
         }
 
         /// create inter-procedural PAG edges for thread forks
-        if(isThreadForkCall(inst)) {
-            if(const Function* forkedFun = getLLVMFunction(getForkedFun(inst)) ) {
-                const Value* actualParm = getActualParmAtForkSite(inst);
+        if (isThreadForkCall(inst)) {
+            if (const Function *forkedFun = getLLVMFunction(getForkedFun(inst))) {
+                const Value *actualParm = getActualParmAtForkSite(inst);
                 /// pthread_create has 1 arg.
                 /// apr_thread_create has 2 arg.
                 assert((forkedFun->arg_size() <= 2) && "Size of formal parameter of start routine should be one");
-                if(forkedFun->arg_size() <= 2 && forkedFun->arg_size() >= 1) {
-                    const Argument* formalParm = &(forkedFun->getArgumentList().front());
+                if (forkedFun->arg_size() <= 2 && forkedFun->arg_size() >= 1) {
+                    const Argument *formalParm = &(forkedFun->getArgumentList().front());
                     /// Connect actual parameter to formal parameter of the start routine
-                    if(isa<PointerType>(actualParm->getType()) && isa<PointerType>(formalParm->getType()) )
-                        pag->addThreadForkEdge(pag->getValueNode(actualParm), pag->getValueNode(formalParm),inst);
+                    if (isa<PointerType>(actualParm->getType()) && isa<PointerType>(formalParm->getType()))
+                        pag->addThreadForkEdge(pag->getValueNode(actualParm), pag->getValueNode(formalParm), inst);
                 }
-            }
-            else {
+            } else {
                 /// handle indirect calls at pthread create APIs e.g., pthread_create(&t1, NULL, fp, ...);
                 ///const llvm::Value* fun = ThreadAPI::getThreadAPI()->getForkedFun(inst);
                 ///if(!isa<Function>(fun))
@@ -979,18 +1020,18 @@ void PAGBuilder::handleExtCall(CallSite cs, const Function *callee) {
             /// We don't connect the callgraph here, further investigation is need to hanle mod-ref during SVFG construction.
         }
 
-        /// create inter-procedural PAG edges for hare_parallel_for calls
-        else if(isHareParForCall(inst)) {
-            if(const Function* taskFunc = getLLVMFunction(getTaskFuncAtHareParForSite(inst)) ) {
+            /// create inter-procedural PAG edges for hare_parallel_for calls
+        else if (isHareParForCall(inst)) {
+            if (const Function *taskFunc = getLLVMFunction(getTaskFuncAtHareParForSite(inst))) {
                 /// The task function of hare_parallel_for has 3 args.
-                assert((taskFunc->arg_size() == 3) && "Size of formal parameter of hare_parallel_for's task routine should be 3");
-                const Value* actualParm = getTaskDataAtHareParForSite(inst);
-                const Argument* formalParm = &(taskFunc->getArgumentList().front());
+                assert((taskFunc->arg_size() == 3) &&
+                       "Size of formal parameter of hare_parallel_for's task routine should be 3");
+                const Value *actualParm = getTaskDataAtHareParForSite(inst);
+                const Argument *formalParm = &(taskFunc->getArgumentList().front());
                 /// Connect actual parameter to formal parameter of the start routine
-                if(isa<PointerType>(actualParm->getType()) && isa<PointerType>(formalParm->getType()) )
-                    pag->addThreadForkEdge(pag->getValueNode(actualParm), pag->getValueNode(formalParm),inst);
-            }
-            else {
+                if (isa<PointerType>(actualParm->getType()) && isa<PointerType>(formalParm->getType()))
+                    pag->addThreadForkEdge(pag->getValueNode(actualParm), pag->getValueNode(formalParm), inst);
+            } else {
                 /// handle indirect calls at hare_parallel_for (e.g., hare_parallel_for(..., fp, ...);
                 ///const llvm::Value* fun = ThreadAPI::getThreadAPI()->getForkedFun(inst);
                 ///if(!isa<Function>(fun))
@@ -1006,7 +1047,7 @@ void PAGBuilder::handleExtCall(CallSite cs, const Function *callee) {
  * Indirect call is resolved on-the-fly during pointer analysis
  */
 void PAGBuilder::handleIndCall(CallSite cs) {
-    pag->addIndirectCallsites(cs,pag->getValueNode(cs.getCalledValue()));
+    pag->addIndirectCallsites(cs, pag->getValueNode(cs.getCalledValue()));
 }
 
 /*
@@ -1047,7 +1088,7 @@ void PAGBuilder::sanityCheck() {
  * 1 addr 3 0
  * 3 gep 4 4
  */
-PAG* PAGBuilderFromFile::build() {
+PAG *PAGBuilderFromFile::build() {
 
     string line;
     ifstream myfile(file.c_str());
@@ -1076,14 +1117,13 @@ PAG* PAGBuilderFromFile::build() {
                     pag->addDummyValNode(nodeId);
                 else if (nodetype == "o") {
                     pag->addDummyObjNode();
-                }
-                else
+                } else
                     assert(
-                        false
-                        && "format not support, pls specify node type");
+                            false
+                            && "format not support, pls specify node type");
             }
 
-            // do not consider gep edge
+                // do not consider gep edge
             else if (token_count == 3) {
                 NodeID nodeSrc;
                 NodeID nodeDst;
@@ -1097,7 +1137,7 @@ PAG* PAGBuilderFromFile::build() {
                 addEdge(nodeSrc, nodeDst, 0, edge);
             }
 
-            // do consider gep edge
+                // do consider gep edge
             else if (token_count == 4) {
                 NodeID nodeSrc;
                 NodeID nodeDst;
@@ -1116,9 +1156,7 @@ PAG* PAGBuilderFromFile::build() {
                        << "\n";
         }
         myfile.close();
-    }
-
-    else
+    } else
         outs() << "Unable to open file\n";
 
     return pag;
@@ -1132,8 +1170,8 @@ void PAGBuilderFromFile::addEdge(NodeID srcID, NodeID dstID,
                                  Size_t offsetOrCSId, std::string edge) {
 
     //check whether these two nodes available
-    PAGNode* srcNode = pag->getPAGNode(srcID);
-    PAGNode* dstNode = pag->getPAGNode(dstID);
+    PAGNode *srcNode = pag->getPAGNode(srcID);
+    PAGNode *dstNode = pag->getPAGNode(dstID);
 
     if (edge == "addr")
         pag->addAddrEdge(srcID, dstID);
