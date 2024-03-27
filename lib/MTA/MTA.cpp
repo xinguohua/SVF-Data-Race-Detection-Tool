@@ -17,6 +17,7 @@
 #include <queue>
 #include <functional>
 #include <unordered_set>
+#include <unordered_map>
 
 using namespace llvm;
 using namespace analysisUtil;
@@ -394,6 +395,11 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
         if (std::regex_search(s2, match, file))
             outfile << match[1] << std::endl;
         outfile << "pair======================" << std::endl;
+
+        if (callOrder(uniquePair.getInst1(), uniquePair.getInst2(), module)){
+            outfile << "single threat pair======================" << std::endl;
+
+        }
     }
 
 
@@ -677,6 +683,7 @@ bool  findCallToFunction(Function *A, Function *B, std::vector<Path>& allPaths) 
 }
 
 
+
 Dependence MTA::isDependent(llvm::Instruction *A, llvm::Instruction *B) {
     if (!A || !B) {
         return Dependence::No;
@@ -691,8 +698,8 @@ Dependence MTA::isDependent(llvm::Instruction *A, llvm::Instruction *B) {
         return Dependence::No;
     }
 
-     BasicBlock *A_Block = A->getParent();
-     BasicBlock *B_Block = B->getParent();
+    BasicBlock *A_Block = A->getParent();
+    BasicBlock *B_Block = B->getParent();
 
     // Function not null
     if (!A->getParent()->getParent() || !B->getParent()->getParent()) {
@@ -730,6 +737,267 @@ Dependence MTA::isDependent(llvm::Instruction *A, llvm::Instruction *B) {
     }
     return findDependence(A, B, A_Block, B_Block);
 }
+
+
+
+bool hasAcquireOrderingFromInstruction(const llvm::Function *function, llvm::Instruction *A) {
+    bool startCheck = false;
+    for (const auto &BB : *function) {
+        for (const auto &Inst : BB) {
+            if (&Inst == A) {
+                startCheck = true;
+            }
+            if (startCheck) {
+                // 检查这条指令是否具有acquire内存序
+                llvm::AtomicOrdering ordering = llvm::AtomicOrdering::NotAtomic;
+                if (auto *atomicLoad = dyn_cast<llvm::LoadInst>(&Inst)) {
+                    if (atomicLoad->isAtomic()) {
+                        ordering = atomicLoad->getOrdering();
+                    }
+                } else if (auto *atomicStore = dyn_cast<llvm::StoreInst>(&Inst)) {
+                    if (atomicStore->isAtomic()) {
+                        ordering = atomicStore->getOrdering();
+                    }
+                } else if (auto *atomicRMW = dyn_cast<llvm::AtomicRMWInst>(&Inst)) {
+                    ordering = atomicRMW->getOrdering();
+                } else if (auto *atomicCmpXchg = dyn_cast<llvm::AtomicCmpXchgInst>(&Inst)) {
+                    ordering = atomicCmpXchg->getSuccessOrdering(); // 注意，cmpxchg有两个内存序，这里仅检查成功的情况
+                }
+
+                if (ordering == llvm::AtomicOrdering::Acquire || ordering == llvm::AtomicOrdering::AcquireRelease || ordering == llvm::AtomicOrdering::SequentiallyConsistent) {
+                    return true; // 找到具有acquire内存序的指令
+                }
+            }
+        }
+    }
+    return false; // 未找到
+}
+
+
+bool hasReleaseOrderingFromInstruction(const Function *function, Instruction *A) {
+    bool startCheck = true;
+    for (const auto &BB : *function) {
+        for (const auto &Inst : BB) {
+            if (&Inst == A) {
+                startCheck = false;
+            }
+            if (startCheck) {
+                // 检查这条指令是否具有release内存序
+                AtomicOrdering ordering = AtomicOrdering::NotAtomic;
+                if (auto *atomicLoad = dyn_cast<LoadInst>(&Inst)) {
+                    ordering = atomicLoad->getOrdering();
+                } else if (auto *atomicStore = dyn_cast<StoreInst>(&Inst)) {
+                    if (atomicStore->isAtomic()) {
+                        ordering = atomicStore->getOrdering();
+                    }
+                } else if (auto *atomicRMW = dyn_cast<AtomicRMWInst>(&Inst)) {
+                    ordering = atomicRMW->getOrdering();
+                } else if (auto *atomicCmpXchg = dyn_cast<AtomicCmpXchgInst>(&Inst)) {
+                    ordering = atomicCmpXchg->getSuccessOrdering(); // 注意，cmpxchg有两个内存序，这里仅检查成功的情况
+                }
+
+                if (ordering == AtomicOrdering::Release || ordering == AtomicOrdering::AcquireRelease) {
+                    return true; // 找到具有release内存序的指令
+                }
+            } else{
+                break;
+            }
+        }
+    }
+    return false; // 未找到
+}
+
+
+void reverseTraverse(const PTACallGraphNode* startNode,
+                     std::vector<const PTACallGraphNode*>& visited,
+                     std::vector<const PTACallGraphNode*>& path,
+                     std::vector<std::vector<const PTACallGraphNode*>>& allPaths) {
+    // 如果这个节点已经访问过，则返回
+    if (std::find(visited.begin(), visited.end(), startNode) != visited.end()) {
+        return;
+    }
+
+    // 标记当前节点为已访问
+    visited.push_back(startNode);
+    // 将当前节点加入到路径中
+    path.push_back(startNode);
+
+    // 如果当前节点是程序入口，则将这条路径加入到所有路径中
+    if (analysisUtil::isProgEntryFunction(startNode->getFunction())) {
+        allPaths.push_back(std::vector<const PTACallGraphNode*>(path));
+    } else {
+        // 否则，继续反向遍历入边
+        for (auto it = startNode->InEdgeBegin(), eit = startNode->InEdgeEnd(); it != eit; ++it) {
+            PTACallGraphEdge* edge = *it;
+            reverseTraverse(edge->getSrcNode(), visited, path, allPaths);
+        }
+    }
+    // 在返回前，将当前节点从路径中移除，以便回溯
+    path.pop_back();
+}
+
+
+std::set<const PTACallGraphNode*> FindCommonNodes(
+        const std::vector<std::vector<const PTACallGraphNode*>>& allPathsA,
+        const std::vector<std::vector<const PTACallGraphNode*>>& allPathsB) {
+
+    std::set<const PTACallGraphNode*> flatSetA, flatSetB;
+
+    // 展平 allPathsA 到 flatSetA
+    for (const auto& path : allPathsA) {
+        for (const auto& node : path) {
+            flatSetA.insert(node);
+        }
+    }
+
+    // 展平 allPathsB 到 flatSetB
+    for (const auto& path : allPathsB) {
+        for (const auto& node : path) {
+            flatSetB.insert(node);
+        }
+    }
+
+    // 寻找交集
+    std::set<const PTACallGraphNode*> commonNodes;
+    std::set_intersection(flatSetA.begin(), flatSetA.end(),
+                          flatSetB.begin(), flatSetB.end(),
+                          std::inserter(commonNodes, commonNodes.begin()));
+
+    return commonNodes;
+}
+
+using Path1 = std::vector<const PTACallGraphNode*>;
+using NodeToPathMap = std::unordered_map<const PTACallGraphNode*, Path1>;
+const PTACallGraphNode* findFirstCommonAncestorAndRecordPath(
+        const std::vector<Path1>& allPathsA,
+        const std::vector<Path1>& allPathsB,
+        Path1& pathFromCommonToA,
+        Path1& pathFromCommonToB) {
+
+    NodeToPathMap nodeToPathMapA;
+    std::unordered_set<const PTACallGraphNode*> pathNodesA;
+
+    // 构建 A 的节点集合，记录路径
+    for (const auto& path : allPathsA) {
+        for (const auto& node : path) {
+            nodeToPathMapA[node] = path; // 直接关联节点到完整路径
+            pathNodesA.insert(node);
+        }
+    }
+
+    // 遍历 B 的路径，寻找公共祖先并记录路径映射
+    for (const auto& path : allPathsB) {
+        for (const auto& node : path) {
+            if (pathNodesA.find(node) != pathNodesA.end()) {
+                // 找到第一个公共祖先
+                auto itA = std::find(nodeToPathMapA[node].begin(), nodeToPathMapA[node].end(), node);
+                if (itA != nodeToPathMapA[node].end()) {
+                    // 截取从公共祖先到A的路径
+                    pathFromCommonToA.assign(nodeToPathMapA[node].begin(), itA+1);
+                    std::reverse(pathFromCommonToA.begin(), pathFromCommonToA.end());
+                }
+
+                auto itB = std::find(path.begin(), path.end(), node);
+                if (itB != path.end()) {
+                    // 截取从公共祖先到B的路径
+                    pathFromCommonToB.assign(path.begin(), itB+1);
+                    std::reverse(pathFromCommonToB.begin(), pathFromCommonToB.end());
+                }
+                return node; // 返回第一个公共祖先节点
+            }
+        }
+    }
+
+    return nullptr; // 如果没有找到公共节点，则返回nullptr
+}
+
+bool MTA::callOrder(llvm::Instruction *A, llvm::Instruction *B, llvm::Module& module){
+    PointerAnalysis *pta = AndersenWaveDiff::createAndersenWaveDiff(module);
+    PAG *pag = pta->getPAG();
+    if (!A || !B) {
+        return false;
+    }
+
+    if (A == B){
+        return false;
+    }
+
+    // block not null
+    if (!A->getParent() || !B->getParent()) {
+        return false;
+    }
+
+     BasicBlock *A_Block = A->getParent();
+     BasicBlock *B_Block = B->getParent();
+
+    // Function not null
+    if (!A->getParent()->getParent() || !B->getParent()->getParent()) {
+        return false;
+    }
+
+    llvm::Instruction* insA;
+    llvm::Instruction* insB;
+    if (A->getParent()->getParent() != B->getParent()->getParent()){
+        PTACallGraphNode* AFunctionNode = pta-> getPTACallGraph()-> getCallGraphNode(A->getParent()->getParent());
+        PTACallGraphNode* BFunctionNode = pta-> getPTACallGraph()->getCallGraphNode(B->getParent()->getParent());
+
+        std::vector<std::vector<const PTACallGraphNode*>> AallPaths;
+        std::vector<const PTACallGraphNode*> Avisited, Apath;
+        reverseTraverse(AFunctionNode, Avisited, Apath, AallPaths);
+
+        std::vector<std::vector<const PTACallGraphNode*>> BallPaths;
+        std::vector<const PTACallGraphNode*> Bvisited, Bpath;
+        reverseTraverse(BFunctionNode, Bvisited, Bpath, BallPaths);
+
+        Path1 pathFromCommonToA, pathFromCommonToB;
+
+        // 调用函数
+        const PTACallGraphNode* commonAncestor = findFirstCommonAncestorAndRecordPath(AallPaths, BallPaths, pathFromCommonToA, pathFromCommonToB);
+        if (commonAncestor == nullptr){
+            return false;
+        }
+
+        PTACallGraphNode* src = const_cast<PTACallGraphNode *>(pathFromCommonToA[0]);
+        PTACallGraphNode* dst = const_cast<PTACallGraphNode *>(pathFromCommonToA[1]);
+        if (dst == nullptr){
+            insA = A;
+        } else{
+            PTACallGraphEdge* edge = pta-> getPTACallGraph()->hasGraphEdge(src, dst, PTACallGraphEdge::CallRetEdge);
+            insA = (llvm::Instruction*)*edge->getDirectCalls().begin();
+        }
+        PTACallGraphNode* src1 = const_cast<PTACallGraphNode *>(pathFromCommonToB[0]);
+        PTACallGraphNode*  dst1= const_cast<PTACallGraphNode *>(pathFromCommonToB[1]);
+        if (dst1 == nullptr){
+            insB =B;
+        } else{
+            PTACallGraphEdge* edge1 = pta-> getPTACallGraph()->hasGraphEdge(src1, dst1, PTACallGraphEdge::CallRetEdge);
+            insB = (llvm::Instruction*)*edge1->getDirectCalls().begin();
+        }
+    } else{
+        insA = A;
+        insB = B;
+    };
+    std::vector<std::vector<const llvm::Instruction *>> allPathInstruction = traverseInstructions(insA, insB);
+
+
+    if (allPathInstruction.empty()){
+        return false;
+    }
+
+    if (allPathInstruction.front().front() == insA){
+        if (!(hasAcquireOrderingFromInstruction(A->getParent()->getParent(), A) && hasReleaseOrderingFromInstruction(B->getParent()->getParent(), B))){
+            return true;
+        }
+    } else if (allPathInstruction.front().front() == insB){
+        if (!(hasAcquireOrderingFromInstruction(B->getParent()->getParent(), B) && hasReleaseOrderingFromInstruction(A->getParent()->getParent(), A))){
+            return true;
+        }
+    }
+    return false;
+}
+
+
+
 
 
 Dependence MTA::findDependence(llvm::Instruction *A, llvm::Instruction *B, llvm::BasicBlock* A_Block, llvm::BasicBlock* B_Block) {

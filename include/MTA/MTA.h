@@ -79,6 +79,8 @@ public:
 
     virtual Dependence isDependent(llvm::Instruction *A, llvm::Instruction *B);
 
+    virtual bool callOrder(llvm::Instruction *A, llvm::Instruction *B, llvm::Module& module);
+
     virtual Dependence findDependence(llvm::Instruction *A, llvm::Instruction *B, llvm::BasicBlock *A_Block, llvm::BasicBlock *B_Block);
         /// Pass name
     virtual llvm::StringRef getPassName() const {

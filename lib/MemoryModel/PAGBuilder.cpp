@@ -91,14 +91,14 @@ PAG *PAGBuilder::build(llvm::Module &module) {
 
                 llvm::Instruction &inst = *it;
                 pag->setCurrentLocation(&inst, &bb);
-                DebugLoc dbgLoc = inst.getDebugLoc();  // 尝试获取调试位置信息
-                if (dbgLoc) {
-                    unsigned line = dbgLoc.getLine();
-                    llvm::errs() << "Instruction at "
-                                 << line // 获取文件名
-                                 << ":"
-                                 << "\n";
-                }
+//                DebugLoc dbgLoc = inst.getDebugLoc();  // 尝试获取调试位置信息
+//                if (dbgLoc) {
+//                    unsigned line = dbgLoc.getLine();
+//                    llvm::errs() << "Instruction at "
+//                                 << line // 获取文件名
+//                                 << ":"
+//                                 << "\n";
+//                }
                 visit(inst);
             }
         }
@@ -426,20 +426,19 @@ void PAGBuilder::visitStoreInst(StoreInst &inst) {
 
 
 void PAGBuilder::visitAtomicCmpXchgInst(AtomicCmpXchgInst &inst) {
-    auto dbgLoc = &inst.getDebugLoc();  // 尝试获取调试位置信息
-    if (dbgLoc != nullptr) {
-        llvm::errs() << "Instruction at "
-                     << dbgLoc->getLine() // 获取文件名
-                     << ":"
-                     << "\n";
-    }
     // StoreInst itself should always not be a pointer type
     assert(!isa<PointerType>(inst.getType()));
+    if (isa<PointerType>(inst.getNewValOperand()->getType())) {
 
-    // store
-    NodeID dst = getValueNode(inst.getPointerOperand());
-    NodeID src = getValueNode(inst.getNewValOperand());
-    pag->addCopyEdge(src, dst);
+        DBOUT(DPAGBuild, outs() << "process store " << inst << " \n");
+
+        NodeID dst = getValueNode(inst.getPointerOperand());
+
+        NodeID src = getValueNode(inst.getNewValOperand());
+
+        pag->addStoreEdge(src, dst);
+    }
+
 
 }
 
