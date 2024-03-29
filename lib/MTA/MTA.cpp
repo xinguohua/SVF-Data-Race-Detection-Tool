@@ -195,6 +195,21 @@ bool hasDataRace(InstructionPair &pair, llvm::Module &module, MHP *mhp, LockAnal
             // The aliasing logic for cmpxchg is similar because it involves both reading and writing to the same memory location.
             alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
         }
+    }else if (const CallInst *p1 = dyn_cast<CallInst>(pair.getInst1())){
+        if (const CallInst *p2 = dyn_cast<CallInst>(pair.getInst2())) {
+            AliasResult results;
+            const Function *calledFunction = p1->getCalledFunction();
+            const Function *calledFunction2 = p2->getCalledFunction();
+            if (calledFunction && calledFunction2){
+                StringRef name  = calledFunction->getName();
+                StringRef name2  = calledFunction->getName();
+                if ((name == "sem_wait" || name == "sem_post") && (name2 == "sem_wait" || name2 == "sem_post")) {
+                    results = pta->alias(p1->getArgOperand(0), p2->getArgOperand(0));
+                }
+            }
+            pair.setAlias(results);
+            alias = (results == MayAlias || results == MustAlias || results == PartialAlias);
+        }
     }
     if (!alias) return false;
     //check mhp
@@ -226,6 +241,8 @@ bool isShared(const Instruction *loc, llvm::Module &module) {
         return isShared(p1->getPointerOperand(), module);
     } else if (const AtomicCmpXchgInst *p1 = dyn_cast<AtomicCmpXchgInst>(loc)){
         return isShared(p1->getPointerOperand(), module);
+    }else if (const CallInst *p1 = dyn_cast<CallInst>(loc)){
+        return isShared(p1->getArgOperand(0), module);
     }
     return false;
 }
@@ -293,10 +310,10 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
         for (inst_iterator II = inst_begin(&*F), E = inst_end(&*F); II != E; ++II) {
 
             Instruction *inst = &*II;
-//            if (auto dbgLoc = inst->getDebugLoc()){
-//                unsigned line = dbgLoc.getLine();
-//                llvm::errs() << "Instruction at " <<  ":" << line<< "\n";
-//            }
+            if (auto dbgLoc = inst->getDebugLoc()){
+                unsigned line = dbgLoc.getLine();
+                llvm::errs() << "Instruction at " <<  ":" << line<< "\n";
+            }
             if (StoreInst *st = dyn_cast<StoreInst>(inst)) {
                 instructions.insert(st);
             } else if (LoadInst *ld = dyn_cast<LoadInst>(inst)) {
@@ -305,6 +322,14 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
                 instructions.insert(rmwInst);
             } else if (AtomicCmpXchgInst *chgInst =  dyn_cast<AtomicCmpXchgInst>(inst)){
                 instructions.insert(chgInst);
+            }else if (CallInst *callInst = dyn_cast<CallInst>(inst)){
+                if (const Function *calledFunction = callInst->getCalledFunction()) {
+                    // 获取函数名称
+                    StringRef functionName = calledFunction->getName();
+                    if (functionName == "sem_wait" || functionName == "sem_post") {
+                        instructions.insert(callInst);
+                    }
+                }
             }
         }
     }
@@ -911,6 +936,30 @@ const PTACallGraphNode* findFirstCommonAncestorAndRecordPath(
     return nullptr; // 如果没有找到公共节点，则返回nullptr
 }
 
+
+CallInst* findPthreadCreateCall(Function *caller, Function *target) {
+    for (auto &BB : *caller) {
+        for (auto &I : BB) {
+            if (auto *callInst = dyn_cast<CallInst>(&I)) {
+                if (Function *calledFunction = callInst->getCalledFunction()) {
+                    if (calledFunction->getName() == "pthread_create") {
+                        Value *thirdArg = callInst->getArgOperand(2);
+                        if (auto *func = dyn_cast<Function>(thirdArg->stripPointerCasts())) {
+                            if (func == target) {
+                                // Found the target function being passed to pthread_create
+                                // Return the call instruction
+                                return callInst;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return nullptr; // If no call to pthread_create with the target function is found
+}
+
+
 bool MTA::callOrder(llvm::Instruction *A, llvm::Instruction *B, llvm::Module& module){
     PointerAnalysis *pta = AndersenWaveDiff::createAndersenWaveDiff(module);
     PAG *pag = pta->getPAG();
@@ -959,11 +1008,21 @@ bool MTA::callOrder(llvm::Instruction *A, llvm::Instruction *B, llvm::Module& mo
 
         PTACallGraphNode* src = const_cast<PTACallGraphNode *>(pathFromCommonToA[0]);
         PTACallGraphNode* dst = const_cast<PTACallGraphNode *>(pathFromCommonToA[1]);
+        if (src == nullptr && dst == nullptr || src == nullptr) return false;
         if (dst == nullptr){
             insA = A;
         } else{
             PTACallGraphEdge* edge = pta-> getPTACallGraph()->hasGraphEdge(src, dst, PTACallGraphEdge::CallRetEdge);
-            insA = (llvm::Instruction*)*edge->getDirectCalls().begin();
+            if (edge == nullptr){
+                CallInst* callInst = findPthreadCreateCall((Function *)src->getFunction(), (Function *)dst->getFunction());
+                if (callInst){
+                    insA = callInst;
+                } else{
+                    return false;
+                }
+            } else{
+                insA = (llvm::Instruction*)*edge->getDirectCalls().begin();
+            }
         }
         PTACallGraphNode* src1 = const_cast<PTACallGraphNode *>(pathFromCommonToB[0]);
         PTACallGraphNode*  dst1= const_cast<PTACallGraphNode *>(pathFromCommonToB[1]);
@@ -971,7 +1030,16 @@ bool MTA::callOrder(llvm::Instruction *A, llvm::Instruction *B, llvm::Module& mo
             insB =B;
         } else{
             PTACallGraphEdge* edge1 = pta-> getPTACallGraph()->hasGraphEdge(src1, dst1, PTACallGraphEdge::CallRetEdge);
-            insB = (llvm::Instruction*)*edge1->getDirectCalls().begin();
+            if (edge1 == nullptr){
+                CallInst* callInst = findPthreadCreateCall((Function *)src1->getFunction(), (Function *)dst1->getFunction());
+                if (callInst){
+                    insB = callInst;
+                } else{
+                    return false;
+                }
+            } else{
+                insB = (llvm::Instruction*)*edge1->getDirectCalls().begin();
+            }
         }
     } else{
         insA = A;
