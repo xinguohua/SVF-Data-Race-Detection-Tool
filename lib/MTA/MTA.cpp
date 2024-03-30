@@ -310,10 +310,10 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
         for (inst_iterator II = inst_begin(&*F), E = inst_end(&*F); II != E; ++II) {
 
             Instruction *inst = &*II;
-            if (auto dbgLoc = inst->getDebugLoc()){
-                unsigned line = dbgLoc.getLine();
-                llvm::errs() << "Instruction at " <<  ":" << line<< "\n";
-            }
+//            if (auto dbgLoc = inst->getDebugLoc()){
+//                unsigned line = dbgLoc.getLine();
+//                llvm::errs() << "Instruction at " <<  ":" << line<< "\n";
+//            }
             if (StoreInst *st = dyn_cast<StoreInst>(inst)) {
                 instructions.insert(st);
             } else if (LoadInst *ld = dyn_cast<LoadInst>(inst)) {
