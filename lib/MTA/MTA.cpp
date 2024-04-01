@@ -423,7 +423,9 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
 
         if (callOrder(uniquePair.getInst1(), uniquePair.getInst2(), module)){
             outfile << "single threat pair======================" << std::endl;
-
+        }
+        if (initOrder(uniquePair.getInst1()) || initOrder(uniquePair.getInst2())){
+            outfile << "init threat pair======================" << std::endl;
         }
     }
 
@@ -1066,6 +1068,246 @@ bool MTA::callOrder(llvm::Instruction *A, llvm::Instruction *B, llvm::Module& mo
 
 
 
+bool isConstructorCall(const llvm::Instruction *inst) {
+    if (const auto *callInst = llvm::dyn_cast<llvm::CallInst>(inst)) {
+        if (const llvm::Function *calledFunction = callInst->getCalledFunction()) {
+            std::string functionName = calledFunction->getName().str();
+            // 检查名称是否包含构造函数的标识符（C1, C2, C3）
+            if (functionName.find("C1") != std::string::npos ||
+                functionName.find("C2") != std::string::npos ||
+                functionName.find("C3") != std::string::npos) {
+                return true; // 是构造函数调用
+            }
+        }
+    }else if (const auto *invokeInst = llvm::dyn_cast<llvm::InvokeInst>(inst)) {
+        if (const llvm::Function *calledFunction = invokeInst->getCalledFunction()) {
+            std::string functionName = calledFunction->getName().str();
+            // 同样的检查逻辑
+            if (functionName.find("C1") != std::string::npos ||
+                functionName.find("C2") != std::string::npos ||
+                functionName.find("C3") != std::string::npos) {
+                return true; // 是构造函数调用
+            }
+        }
+    }
+    return false; // 不是构造函数调用
+}
+
+bool isConstructorCallAndMatchType(const llvm::Instruction *inst, llvm::Type *expectedType) {
+    // 首先检查是否是构造函数调用
+    if (!isConstructorCall(inst)) {
+        return false;
+    }
+    if (!expectedType){
+        return false;
+    }
+
+    // 是构造函数调用，现在检查类型
+    if (const auto *callInst = llvm::dyn_cast<llvm::CallInst>(inst)) {
+        if (callInst->getNumOperands() > 0) {
+            llvm::Value *firstParam = callInst->getOperand(0);
+            if (firstParam->getType() == expectedType){
+                return true;
+            }
+        }
+    } else if (const auto *invokeInst = llvm::dyn_cast<llvm::InvokeInst>(inst)) {
+        if (invokeInst->getNumOperands() > 0) {
+            llvm::Value *firstParam = invokeInst->getOperand(0);
+            if (firstParam->getType() == expectedType) {
+                return true; // 类型匹配
+            }
+        }
+    }
+
+    return false; // 不是构造函数调用或类型不匹配
+}
+
+const llvm::StructType* getClassTypeFromConstructor(const llvm::Instruction *inst) {
+    const llvm::Value *firstArg = nullptr;
+
+    // 尝试将指令转换为CallInst
+    if (const auto *callInst = llvm::dyn_cast<llvm::CallInst>(inst)) {
+        if (callInst->getNumOperands() > 0) {
+            firstArg = callInst->getArgOperand(0);
+        }
+    }
+        // 尝试将指令转换为InvokeInst
+    else if (const auto *invokeInst = llvm::dyn_cast<llvm::InvokeInst>(inst)) {
+        if (invokeInst->getNumOperands() > 0) {
+            // 对于InvokeInst，第一个操作数同样是被调用函数的第一个参数
+            firstArg = invokeInst->getArgOperand(0);
+        }
+    }
+
+    // 检查是否成功获取到了第一个参数
+    if (firstArg) {
+        if (const auto *ptrType = llvm::dyn_cast<llvm::PointerType>(firstArg->getType())) {
+            // 获取指针指向的类型，检查是否为结构体类型
+            return llvm::dyn_cast<llvm::StructType>(ptrType->getElementType());
+        }
+    }
+
+    return nullptr; // 如果不是构造函数调用或无法获取类型，返回nullptr
+}
+
+
+bool isTypeCheckInstruction(const llvm::Instruction *inst, const llvm::StructType *classType) {
+    // 检查指令是否是一个比较指令（icmp）
+    if (const auto *cmpInst = llvm::dyn_cast<llvm::ICmpInst>(inst)) {
+        // 获取比较操作的两个操作数
+        const llvm::Value *lhs = cmpInst->getOperand(0);
+        const llvm::Value *rhs = cmpInst->getOperand(1);
+
+        // 检查每个操作数是否涉及到了目标类型
+        for (const llvm::Value *operand : {lhs, rhs}) {
+            if (const auto *operandType = llvm::dyn_cast<llvm::PointerType>(operand->getType())) {
+                if (operandType->getElementType() == classType) {
+                    // 如果操作数的元素类型匹配目标类类型，认为这是一个类型检查
+                    return true;
+                }
+            }
+        }
+    }
+
+
+    return false;
+}
+
+
+bool hasTypeCheckInPreviousBlock(const llvm::Instruction *constructorCall) {
+    // 获取当前指令所在的基本块
+    const llvm::BasicBlock *currentBlock = constructorCall->getParent();
+    if (!currentBlock) return false;
+
+    // 获取前一个基本块
+    const llvm::BasicBlock *prevBlock = currentBlock->getPrevNode();
+    if (!prevBlock) return false;
+
+    // 获取构造函数调用的类型
+    const llvm::StructType *classType = getClassTypeFromConstructor(constructorCall);
+
+    if (!classType) return false;
+
+    // 从后向前遍历前一个基本块中的所有指令
+    for (auto it = prevBlock->rbegin(); it != prevBlock->rend(); ++it) {
+        const llvm::Instruction &inst = *it;
+
+        // 这里需要一个方法来判断指令是否是对特定类型的判断
+        // 这可能涉及到比较指令（如icmp）和类型检查
+        // 以下是伪代码和简化逻辑
+        if (isTypeCheckInstruction(&inst, classType)) {
+            return true; // 发现类型判断语句
+        }
+    }
+
+    return false; // 没有找到类型判断语句
+}
+
+bool checkForAssignment(const llvm::Instruction *inst, const StructType* classType){
+    // 检查是否是赋值操作（store指令）
+    if (const auto *storeInst = llvm::dyn_cast<llvm::StoreInst>(inst)) {
+        const llvm::Value *value = storeInst->getValueOperand(); // 获取store指令的值操作数
+
+        // 检查值的类型是否为目标类类型
+        if (const auto *valueType = llvm::dyn_cast<llvm::PointerType>(value->getType())) {
+            if (valueType->getElementType() == classType) {
+                return true; // 找到对目标类型的赋值操作
+            }
+        }
+    }
+    return false;
+}
+
+bool hasAssignmentToTypeAfterConstructor(const llvm::Instruction *constructorCall) {
+    // 获取当前指令所在的基本块
+    const llvm::BasicBlock *block = constructorCall->getParent();
+    if (!block) return false;
+
+    const llvm::StructType *classType = getClassTypeFromConstructor(constructorCall);
+    if (!classType) return false;
+
+    // 从构造函数调用指令开始，遍历基本块中后续的指令
+    bool foundConstructorCall = false;
+
+    for (const llvm::Instruction &inst: *block) {
+        if (&inst == constructorCall) {
+            foundConstructorCall = true; // 找到构造函数调用指令，开始检查后续指令
+            continue;
+        }
+
+        if (!foundConstructorCall) {
+            continue; // 如果还没遇到构造函数调用指令，继续遍历
+        }
+        if (checkForAssignment(&inst, classType)) {
+            return true;
+        }
+    }
+    for (const llvm::BasicBlock *succ: successors(block)) {
+        for (const llvm::Instruction &inst: *succ) {
+            if (checkForAssignment(&inst, classType)) {
+                return true;
+            }
+        }
+    }
+    return false; // 没有找到对目标类型的赋值操作
+}
+
+
+const llvm::Instruction* getPreviousInstruction(const llvm::Instruction* inst) {
+    if (!inst) return nullptr;
+
+    // 如果当前指令不是基本块的第一条，直接返回前一条指令
+    if (auto* prevInst = inst->getPrevNode()) {
+        return prevInst;
+    }
+
+    // 当前指令是基本块的第一条，找到前一个基本块的最后一条指令
+    const llvm::BasicBlock* currentBlock = inst->getParent();
+    if (!currentBlock) return nullptr; // 确保inst有父基本块
+
+    // 获取当前基本块的所有前驱基本块
+    for (const llvm::BasicBlock* Pred : predecessors(currentBlock)) {
+        if (Pred) {
+            // 返回前驱基本块的最后一条指令
+            if (!Pred->empty()) {
+                return &Pred->back();
+            }
+        }
+    }
+
+    return nullptr; // 没有前一条指令
+}
+
+
+bool checkStoreWithConstructorICMP(llvm::Instruction* inst) {
+    // 首先，检查当前指令是否为store指令
+    if (auto* storeInst = llvm::dyn_cast<llvm::StoreInst>(inst)) {
+        llvm::Value* storedValue = storeInst->getValueOperand();
+        llvm::Type* storedType = storedValue->getType();
+        const llvm::Instruction* prevInst = getPreviousInstruction(inst);
+        // 获取当前store指令之前的指令
+        if (prevInst) {
+            if (isConstructorCallAndMatchType(prevInst, storedType)){
+                if (hasTypeCheckInPreviousBlock(prevInst)){
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+
+bool MTA::initOrder(llvm::Instruction *A) {
+    if (auto dbgLoc = A->getDebugLoc()) {
+        unsigned line = dbgLoc.getLine();
+        llvm::errs() << "Instruction at " << ":" << line << "\n";
+    }
+    if (checkStoreWithConstructorICMP(A)) {
+        return true;
+    }
+    return false;
+}
 
 
 Dependence MTA::findDependence(llvm::Instruction *A, llvm::Instruction *B, llvm::BasicBlock* A_Block, llvm::BasicBlock* B_Block) {

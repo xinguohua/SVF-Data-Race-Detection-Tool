@@ -18,12 +18,19 @@
 #include <vector>
 
 class PointerAnalysis;
+
 class AndersenWaveDiff;
+
 class ThreadCallGraph;
+
 class MTAStat;
+
 class TCT;
+
 class MHP;
+
 class LockAnalysis;
+
 enum class Dependence {
     No,   // 完全无关
     programLogicBeforeDependence, /*程序逻辑顺序依赖 memory_order_relaxed*/
@@ -42,21 +49,22 @@ enum class Result {
     Program,
     Order,
 };
+
 /*!
  * Base data race detector
  */
-class MTA: public llvm::ModulePass {
+class MTA : public llvm::ModulePass {
 
 public:
-    typedef std::set<const llvm::LoadInst*> LoadSet;
-    typedef std::set<const llvm::StoreInst*> StoreSet;
-    typedef std::map<const llvm::Function*, llvm::ScalarEvolution*> FunToSEMap;
-    typedef std::map<const llvm::Function*, llvm::LoopInfo*> FunToLoopInfoMap;
+    typedef std::set<const llvm::LoadInst *> LoadSet;
+    typedef std::set<const llvm::StoreInst *> StoreSet;
+    typedef std::map<const llvm::Function *, llvm::ScalarEvolution *> FunToSEMap;
+    typedef std::map<const llvm::Function *, llvm::LoopInfo *> FunToLoopInfoMap;
 
     /// Pass ID
     static char ID;
 
-    static llvm::ModulePass* modulePass;
+    static llvm::ModulePass *modulePass;
 
     /// Constructor
     MTA();
@@ -66,84 +74,92 @@ public:
 
 
     /// We start the pass here
-    virtual bool runOnModule(llvm::Module& module);
+    virtual bool runOnModule(llvm::Module &module);
+
     /// Compute MHP
-    virtual MHP* computeMHP(llvm::Module& module);
+    virtual MHP *computeMHP(llvm::Module &module);
+
     /// Compute locksets
-    virtual LockAnalysis* computeLocksets(TCT* tct);
+    virtual LockAnalysis *computeLocksets(TCT *tct);
 
     /// output test
-    virtual void pairAnalysis(llvm::Module& module, MHP *mhp, LockAnalysis *lsa);
+    virtual void pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa);
 
-    const llvm::PostDominatorTree* getPostDT(const llvm::Function* fun);
+    const llvm::PostDominatorTree *getPostDT(const llvm::Function *fun);
 
     virtual Dependence isDependent(llvm::Instruction *A, llvm::Instruction *B);
 
-    virtual bool callOrder(llvm::Instruction *A, llvm::Instruction *B, llvm::Module& module);
+    virtual bool callOrder(llvm::Instruction *A, llvm::Instruction *B, llvm::Module &module);
 
-    virtual Dependence findDependence(llvm::Instruction *A, llvm::Instruction *B, llvm::BasicBlock *A_Block, llvm::BasicBlock *B_Block);
-        /// Pass name
+    virtual bool initOrder(llvm::Instruction *A);
+
+
+    virtual Dependence
+    findDependence(llvm::Instruction *A, llvm::Instruction *B, llvm::BasicBlock *A_Block, llvm::BasicBlock *B_Block);
+
+    /// Pass name
     virtual llvm::StringRef getPassName() const {
         return "Multi threaded program analysis pass";
     }
 
     /// Get analysis usage
-    inline virtual void getAnalysisUsage(llvm::AnalysisUsage& au) const {
+    inline virtual void getAnalysisUsage(llvm::AnalysisUsage &au) const {
         /// do not intend to change the IR in this pass,
         au.setPreservesAll();
         au.addRequired<llvm::ScalarEvolutionWrapperPass>();
     }
 
     // Get ScalarEvolution for Function F.
-    static inline llvm::ScalarEvolution* getSE(const llvm::Function *F) {
+    static inline llvm::ScalarEvolution *getSE(const llvm::Function *F) {
         FunToSEMap::iterator it = func2ScevMap.find(F);
         if (it != func2ScevMap.end())
             return it->second;
-        llvm::ScalarEvolutionWrapperPass *scev = &modulePass->getAnalysis<llvm::ScalarEvolutionWrapperPass>(*const_cast<llvm::Function*>(F));
+        llvm::ScalarEvolutionWrapperPass *scev = &modulePass->getAnalysis<llvm::ScalarEvolutionWrapperPass>(
+                *const_cast<llvm::Function *>(F));
         func2ScevMap[F] = &scev->getSE();
         return &scev->getSE();
     }
 
 private:
-    ThreadCallGraph* tcg;
-    TCT* tct;
-    MTAStat* stat;
+    ThreadCallGraph *tcg;
+    TCT *tct;
+    MTAStat *stat;
     static FunToSEMap func2ScevMap;
     static FunToLoopInfoMap func2LoopInfoMap;
 
-    PTACFInfoBuilder infoBuilder;		    ///< map a function to its loop info
+    PTACFInfoBuilder infoBuilder;            ///< map a function to its loop info
 
 };
 
 class InstructionPair {
 public:
-    InstructionPair(llvm::Instruction* a, llvm::Instruction* b){
+    InstructionPair(llvm::Instruction *a, llvm::Instruction *b) {
         inst1 = a;
         inst2 = b;
         alias = 0;
     }
 
-    llvm::Instruction* getInst1() const{
+    llvm::Instruction *getInst1() const {
         return inst1;
     }
 
-    llvm::Instruction* getInst2() const{
+    llvm::Instruction *getInst2() const {
         return inst2;
     }
 
-    void setAlias(int result){
+    void setAlias(int result) {
         alias = result;
     }
 
-    int getAlias() const{
+    int getAlias() const {
         return alias;
     }
 
-    std::string getLoc1() const{
+    std::string getLoc1() const {
         return loc1;
     }
 
-    std::string getLoc2() const{
+    std::string getLoc2() const {
         return loc2;
     }
 
@@ -151,13 +167,13 @@ public:
         loc1 = std::move(str);
     }
 
-    void setLoc2(std::string str){
+    void setLoc2(std::string str) {
         loc2 = std::move(str);
     }
 
 private:
-    llvm::Instruction* inst1;
-    llvm::Instruction* inst2;
+    llvm::Instruction *inst1;
+    llvm::Instruction *inst2;
     std::string loc1;
     std::string loc2;
     int alias;
