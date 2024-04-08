@@ -1299,10 +1299,10 @@ bool checkStoreWithConstructorICMP(llvm::Instruction* inst) {
 
 
 bool MTA::initOrder(llvm::Instruction *A) {
-    if (auto dbgLoc = A->getDebugLoc()) {
-        unsigned line = dbgLoc.getLine();
-        llvm::errs() << "Instruction at " << ":" << line << "\n";
-    }
+//    if (auto dbgLoc = A->getDebugLoc()) {
+//        unsigned line = dbgLoc.getLine();
+//        llvm::errs() << "Instruction at " << ":" << line << "\n";
+//    }
     if (checkStoreWithConstructorICMP(A)) {
         return true;
     }
