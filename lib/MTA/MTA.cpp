@@ -407,6 +407,9 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
     for (const auto& pair : pairs) {
         uniquePairs.insert(pair);
     }
+    int countsingleOrderPosition  = 0;
+    int countPairOrderPosition  = 0;
+
     for (const auto & uniquePair : uniquePairs) {
         if (uniquePair.getLoc1().empty() || uniquePair.getLoc2().empty()) continue;
         s1 = uniquePair.getLoc1();
@@ -422,9 +425,11 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
         outfile << "pair======================" << std::endl;
 
         if (callOrder(uniquePair.getInst1(), uniquePair.getInst2(), module)){
+            countsingleOrderPosition ++ ;
             outfile << "single threat pair======================" << std::endl;
         }
         if (initOrder(uniquePair.getInst1()) || initOrder(uniquePair.getInst2())){
+            countsingleOrderPosition ++ ;
             outfile << "init threat pair======================" << std::endl;
         }
     }
@@ -445,20 +450,23 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
             Result result3 = dependencyRet(flag3);
             Result result4 = dependencyRet(flag4);
 
-            if (element1.getLoc1().empty() && element1.getLoc2().empty()
-                && element0.getLoc1().empty() && element0.getLoc2().empty()){
+            if (element1.getLoc1().empty() || element1.getLoc2().empty()
+                || element0.getLoc1().empty() || element0.getLoc2().empty()){
                 continue;
             }
 
 
-            if (result1 == Result::Program && result2 == Result::Order
-                || result1 == Result::Order && result2 == Result::Program
-                || result1 == Result::Program && result2 ==Result::Program
-                || result3 == Result::Program && result4 == Result::Order
-                || result3 == Result::Order && result4 == Result::Program
-                || result3 == Result::Program && result4 == Result::Program) {
+            if ((result1 == Result::Program && result2 == Result::Order)
+                || (result1 == Result::Order && result2 == Result::Program)
+                || (result1 == Result::Program && result2 ==Result::Program)
+                || (result3 == Result::Program && result4 == Result::Order)
+                || (result3 == Result::Order && result4 == Result::Program)
+                || (result3 == Result::Program && result4 == Result::Program)) {
+                countPairOrderPosition ++;
                 outfile << "first race: " << element0.getLoc1() << "---" << element0.getLoc2() << std::endl;
                 outfile << "second race: " << element1.getLoc1() << "---" << element1.getLoc2() << std::endl;
+            } else{
+                continue;
             }
             if (result1 == Result::Program && result2 == Result::Order) {
                 outfile << "Loc:" << element0.getLoc1() << "---" << element1.getLoc1() << " dont dependency"
@@ -508,7 +516,8 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
             }
         }
     }
-
+    outfile << "countsingleOrderPosition="<< countsingleOrderPosition << std::endl;
+    outfile << "countPairOrderPosition="<< countPairOrderPosition << std::endl;
 
     outfile.flush();
     outfile.close();
