@@ -83,7 +83,7 @@ public:
     virtual LockAnalysis *computeLocksets(TCT *tct);
 
     /// output test
-    virtual void pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa);
+    virtual void pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa, clock_t start);
 
     const llvm::PostDominatorTree *getPostDT(const llvm::Function *fun);
 

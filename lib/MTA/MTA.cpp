@@ -47,7 +47,7 @@ bool MTA::runOnModule(llvm::Module &module) {
 
     MHP *mhp = computeMHP(module);
     LockAnalysis *lsa = computeLocksets(mhp->getTCT());
-    pairAnalysis(module, mhp, lsa);
+    pairAnalysis(module, mhp, lsa, start);
 
     clock_t end = clock();
     double time_spent = (double) (end - start) / CLOCKS_PER_SEC;
@@ -300,7 +300,7 @@ std::string dependenceToString(Dependence dep) {
 }
 
 
-void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
+void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa, clock_t start) {
     std::cout << " --- Running pair analysis ---\n";
 
     std::set<Instruction *> instructions;
@@ -407,6 +407,10 @@ void MTA::pairAnalysis(llvm::Module &module, MHP *mhp, LockAnalysis *lsa) {
     for (const auto& pair : pairs) {
         uniquePairs.insert(pair);
     }
+    clock_t end1= clock();
+    double time_spent1 = (double) (end1 - start) / CLOCKS_PER_SEC;
+    std::cout << "base: Size of uniquePairs: " << uniquePairs.size()*(uniquePairs.size()-1) << "   time_spent1 " << time_spent1 <<std::endl;
+
     int countsingleOrderPosition  = 0;
     int countPairOrderPosition  = 0;
 
@@ -1297,9 +1301,10 @@ bool checkStoreWithConstructorICMP(llvm::Instruction* inst) {
         // 获取当前store指令之前的指令
         if (prevInst) {
             if (isConstructorCallAndMatchType(prevInst, storedType)){
-                if (hasTypeCheckInPreviousBlock(prevInst)){
-                    return true;
-                }
+//                if (hasTypeCheckInPreviousBlock(prevInst)){
+//                    return true;
+//                }
+                return true;
             }
         }
     }
